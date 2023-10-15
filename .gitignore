@@ -1,0 +1,32 @@
+# Ignore compiled binary files
+*.exe
+*.o
+*.out
+
+# Ignore build directories
+_build/
+bin/
+pkg/
+
+# Ignore log files
+*.log
+
+# Ignore config files
+*.yaml
+*.json
+
+# Ignore editor/IDE-specific files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Ignore system and temporary files
+Thumbs.db
+.DS_Store
+*.swp
+*.swo
+
+# Ignore vendor directory (if not using Go Modules)
+/vendor/
+
