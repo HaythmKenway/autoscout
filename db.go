@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+
 	_ "github.com/mattn/go-sqlite3"
 )
 func cron(){
@@ -15,10 +16,10 @@ func cron(){
 	defer db.Close()
 	urls,_ :=getUrlsFromTable(db,"targets")
 	for _,x:=range urls{
-		checkErr(SubdomainEnum(x))	
+		checkErr(SubdomainEnum(x))
 	}
 
-	
+
 }
 
 func SubdomainEnum(url string) error {
@@ -114,9 +115,10 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	_ "github.com/mattn/go-sqlite3"
 	"io"
 	"os/exec"
-	_ "github.com/mattn/go-sqlite3"
+	"time"
 )
 
 type Configuration struct {
@@ -146,6 +148,7 @@ func cron() {
 			fmt.Printf("Error in SubdomainEnum for %s: %v\n", url, err)
 		}
 	}
+	time.Sleep(time.Hour/2)
 }
 
 func openDatabase(filename string) (*sql.DB, error) {
@@ -176,7 +179,7 @@ func SubdomainEnum(config Configuration, url string, db *sql.DB) error {
 	insertElement := ElementsOnlyInNow(prev, now)
 
 	pipeReader, pipeWriter := io.Pipe()
-	cmd := exec.Command("notify", "-mf", "🎯 New Target Found! \n {{data}}", "-bulk")
+	cmd := exec.Command("notify", "-mf", "🎯 New Target Found! \n {{data}}" )
 	cmd.Stdin = pipeReader
 	done := make(chan error)
 
