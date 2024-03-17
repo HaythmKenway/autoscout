@@ -6,6 +6,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	"io"
 	"os/exec"
+	"log"
 )
 
 type Configuration struct {
@@ -22,13 +23,20 @@ func cron() {
 		return
 	}
 	defer db.Close()
+	err = createTableIfNotExists(db, "targets")
+	fmt.Println("Creating targets table")
+	if err != nil {
+		fmt.Printf("Error creating targets table: %v\n", err)
+		return
+	}
 
+	
 	urls, err := getUrlsFromTable(db, "targets")
 	if err != nil {
 		fmt.Printf("Error getting URLs from the database: %v\n", err)
 		return
 	}
-
+	log.Println("Starting SubdomainEnum")
 	for _, url := range urls {
 		err := SubdomainEnum(config, url, db)
 		if err != nil {
@@ -37,6 +45,23 @@ func cron() {
 	}
 }
 
+func addTarget(url string) {
+	config := Configuration{
+		DatabaseFile: getWorkingDirectory() + "/autoscout.db",
+	}
+	db, err := openDatabase(config.DatabaseFile)
+	if err != nil {
+		fmt.Printf("Error opening database: %v\n", err)
+		return
+	}
+	defer db.Close()
+
+	_, err = db.Exec("INSERT INTO targets (url) VALUES (?)", url)
+	if err != nil {
+		fmt.Printf("Error inserting target: %v\n", err)
+		return
+	}
+}
 func openDatabase(filename string) (*sql.DB, error) {
 	db, err := sql.Open("sqlite3", filename)
 	if err != nil {

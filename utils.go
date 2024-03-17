@@ -41,9 +41,8 @@ func parseSubdomains(output string) []string {
 	return subdomains
 }
 func removeSpecialCharacters(input string) string {
-	// Define a regular expression to match all non-alphanumeric characters (excluding spaces).
+
 	regex := regexp.MustCompile("[^a-zA-Z0-9\\s]+")
-	// Replace all non-alphanumeric characters with an empty string.
 	processedString := regex.ReplaceAllString(input, "")
 	return processedString
 }
