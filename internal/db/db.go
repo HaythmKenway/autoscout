@@ -4,11 +4,10 @@ import (
 	"database/sql"
 	"fmt"
 	_ "github.com/mattn/go-sqlite3"
-	"io"
-	"os/exec"
 	"log"
 	"github.com/HaythmKenway/autoscout/pkg/utils"
 	"github.com/HaythmKenway/autoscout/pkg/subdomain"
+	"github.com/HaythmKenway/autoscout/pkg/notifier"
 )
 
 type Configuration struct {
@@ -91,30 +90,14 @@ func SubdomainEnum(config Configuration, url string, db *sql.DB) error {
 	}
 
 	insertElement := utils.ElementsOnlyInNow(prev, now)
-
-	pipeReader, pipeWriter := io.Pipe()
-	cmd := exec.Command("notify", "-mf", "🎯 New Target Found! \n {{data}}" )
-	cmd.Stdin = pipeReader
-	done := make(chan error)
-
-	go func() {
-		// Start the command and capture any errors
-		err := cmd.Run()
-		done <- err
-	}()
-
+	notifier.ClassifyNotification(insertElement)
 	tx, err := db.Begin()
 	if err != nil {
 		return err
 	}
 
 	for _, u := range insertElement {
-		_, err := pipeWriter.Write([]byte(u + "\n"))
-		if err != nil {
-			return err
-		}
 		err = AddUrl(db, u, tableName)
-//		_, err = tx.Exec(fmt.Sprintf("INSERT INTO %s (url) VALUES (?)", tableName), u)
 		if err != nil {
 			tx.Rollback()
 			return err

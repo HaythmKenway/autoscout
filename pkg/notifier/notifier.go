@@ -2,20 +2,28 @@ package notifier
 
 import (
 	"os/exec"
-	"github.com/HaythmKenway/autoscout/pkg/utils"
+	"fmt"
+	"io"
+	//"github.com/HaythmKenway/autoscout/pkg/utils"
 )
-func SendNotification(msg string,tableName string) {
-	// send notification
-	_, err = tx.Exec(fmt.Sprintf("INSERT INTO %s (url) VALUES (?)", tableName), msg)
-		if err != nil {
-			tx.Rollback()
-			return err
-		}
 
-	msg = "🎯 New Target Found! \n" + msg
-	cmd := exec.Command("notify", "-mf", msg) 
-	cmd.Run()
 
-}
 
+func ClassifyNotification(urls[] string){
+pipeReader, pipeWriter := io.Pipe()
+cmd := exec.Command("notify", "-mf", "🎯 New Target Found! \n {{data}}" )
+cmd.Stdin = pipeReader
+done := make(chan error)
+go func() {
+	// Start the command and capture any errors
+	err := cmd.Run()
+	done <- err
+}()
+for _, u := range urls {
+	_, err := pipeWriter.Write([]byte(u + "\n"))
+	if err != nil {
+		fmt.Println(err)
+	}
+
+}}
 

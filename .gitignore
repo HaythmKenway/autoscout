@@ -6,7 +6,6 @@
 # Ignore build directories
 _build/
 bin/
-pkg/
 
 # Ignore log files
 *.log
