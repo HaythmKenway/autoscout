@@ -17,7 +17,6 @@ func GetWorkingDirectory() string{
 	if os.IsNotExist(err) {
 		err = os.Mkdir(dirPath, 0755) 
 		if err != nil {
-			fmt.Println("Error creating directory:", err)
 			os.Exit(1)
 		}
 		return dirPath

@@ -2,7 +2,29 @@ package db
 
 import (
 	"database/sql"
+	"fmt"
+
+	"github.com/HaythmKenway/autoscout/pkg/utils"
 )
+
+func AddTarget(url string) {
+	config := Configuration{
+		DatabaseFile: utils.GetWorkingDirectory() + "/autoscout.db",
+	}
+	db, err := openDatabase(config.DatabaseFile)
+	if err != nil {
+		fmt.Printf("Error opening database: %v\n", err)
+		return
+	}
+	defer db.Close()
+
+	createTableIfNotExists(db, "targets")
+	_, err = db.Exec("INSERT INTO targets (subdomain) VALUES (?)", url)
+	if err != nil {
+		fmt.Printf("Error inserting target: %v\n", err)
+		return
+	}
+}
 func getTargetsFromTable(db *sql.DB) ([]string, error) {
 	selectStmt, err := db.Prepare("SELECT subdomain FROM targets")
 	if err != nil {

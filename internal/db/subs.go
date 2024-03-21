@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 )
+
 func getSubsFromTable(db *sql.DB, domain string) ([]string, error) {
 	selectStmt, err := db.Prepare("SELECT subdomain FROM subdomain WHERE domain = ?")
 	if err != nil {
@@ -42,7 +43,6 @@ func checkErr(err error) {
 }
 
 func AddSubs(db *sql.DB, url string, domain string) error {
-	_, err := db.Exec("INSERT INTO subdomain (subdomain,domain) VALUES (?,?)", url,domain)
+	_, err := db.Exec("INSERT INTO subdomain (subdomain,domain) VALUES (?,?)", url, domain)
 	return err
 }
-

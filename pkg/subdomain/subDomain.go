@@ -1,4 +1,4 @@
-package subdomain 
+package subdomain
 
 import (
 	"bytes"
@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"sort"
+
 	"github.com/HaythmKenway/autoscout/pkg/utils"
 	"github.com/projectdiscovery/subfinder/v2/pkg/runner"
 )
@@ -29,7 +30,6 @@ func Subdomain(domain string) ([]string, error) {
 		log.Fatalf("failed to enumerate single domain: %v", err)
 	}
 
-	
 	subdomains := utils.ParseSubdomains(output.String())
 
 	sort.Strings(subdomains)
