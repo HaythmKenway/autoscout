@@ -4,7 +4,54 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+
+	"github.com/HaythmKenway/autoscout/pkg/notifier"
+	"github.com/HaythmKenway/autoscout/pkg/subdomain"
+	"github.com/HaythmKenway/autoscout/pkg/utils"
 )
+
+func SubdomainEnum(config Configuration, url string, db *sql.DB) error {
+	err := createSubsTableIfNotExists(db)
+	if err != nil {
+		return err
+	}
+
+	prev, err := getSubsFromTable(db, url)
+	if err != nil {
+		return err
+	}
+
+	now, err := subdomain.Subdomain(url)
+	if err != nil {
+		return err
+	}
+
+	insertElement := utils.ElementsOnlyInNow(prev, now)
+	notifier.ClassifyNotification(insertElement)
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+
+	for _, subd := range insertElement {
+		err = AddSubs(db, subd, url)
+		if err != nil {
+
+			tx.Rollback()
+			return err
+		}
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		return err
+	}
+
+	for _, x := range insertElement {
+		fmt.Println(x)
+	}
+	return nil
+}
 
 func getSubsFromTable(db *sql.DB, domain string) ([]string, error) {
 	selectStmt, err := db.Prepare("SELECT subdomain FROM subdomain WHERE domain = ?")

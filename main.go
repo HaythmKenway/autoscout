@@ -13,6 +13,7 @@ func main() {
 	deamon := flag.Bool("d", false, "Run Autoscout in deamon mode")
 	cleardb := flag.Bool("reset", false, "Clear All database")
 	flag.Parse()
+
 	if *cleardb {
 		db.ClearDB()
 	}
@@ -30,6 +31,5 @@ func main() {
 	return
 }
 func StartUp() {
-
-	db.Cron()
+	db.Deamon()
 }
