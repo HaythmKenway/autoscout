@@ -25,7 +25,6 @@ func Subdomain(domain string) ([]string, error) {
 	}
 
 	output := &bytes.Buffer{}
-	// To run subdomain enumeration on a single domain
 	if err = subfinder.EnumerateSingleDomainWithCtx(context.Background(), domain, []io.Writer{output}); err != nil {
 		log.Fatalf("failed to enumerate single domain: %v", err)
 	}

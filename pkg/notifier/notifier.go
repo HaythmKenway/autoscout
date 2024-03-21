@@ -4,7 +4,6 @@ import (
 	"os/exec"
 	"fmt"
 	"io"
-	//"github.com/HaythmKenway/autoscout/pkg/utils"
 )
 
 

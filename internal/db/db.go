@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"os/exec"
 	_ "github.com/mattn/go-sqlite3"
 	"log"
 	"github.com/HaythmKenway/autoscout/pkg/utils"
@@ -14,6 +15,13 @@ type Configuration struct {
 	DatabaseFile string
 }
 
+func ClearDB() {
+	cmd := exec.Command("rm", utils.GetWorkingDirectory() + "/autoscout.db")
+	err := cmd.Run()
+	if err != nil {
+		fmt.Println(err)
+	}
+}
 func Cron() {
 	config := Configuration{
 		DatabaseFile:utils.GetWorkingDirectory() + "/autoscout.db",
@@ -32,7 +40,7 @@ func Cron() {
 	}
 
 	
-	urls, err := getUrlsFromTable(db, "targets")
+	urls, err := getTargetsFromTable(db)
 	if err != nil {
 		fmt.Printf("Error getting URLs from the database: %v\n", err)
 		return
@@ -58,7 +66,7 @@ func AddTarget(url string) {
 	defer db.Close()
 	
 	 createTableIfNotExists(db, "targets")
-	_, err = db.Exec("INSERT INTO targets (url) VALUES (?)", url)
+	_, err = db.Exec("INSERT INTO targets (subdomain) VALUES (?)", url)
 	if err != nil {
 		fmt.Printf("Error inserting target: %v\n", err)
 		return
@@ -73,19 +81,21 @@ func openDatabase(filename string) (*sql.DB, error) {
 }
 
 func SubdomainEnum(config Configuration, url string, db *sql.DB) error {
-	tableName :=utils.RemoveSpecialCharacters(url)
-	err := createTableIfNotExists(db, tableName)
+	err := createSubsTableIfNotExists(db)
 	if err != nil {
+		log.Printf("Error creating subdomain table: %v\n", err)
 		return err
 	}
 
-	prev, err := getUrlsFromTable(db, tableName)
+	prev, err := getSubsFromTable(db,url)
 	if err != nil {
+		log.Printf("Error getting subdomains from the database: %v\n", err)
 		return err
 	}
 
 	now, err := subdomain.Subdomain(url)
 	if err != nil {
+		log.Printf("Error getting subdomains  2from the database: %v\n", err)
 		return err
 	}
 
@@ -93,12 +103,14 @@ func SubdomainEnum(config Configuration, url string, db *sql.DB) error {
 	notifier.ClassifyNotification(insertElement)
 	tx, err := db.Begin()
 	if err != nil {
+		log.Printf("Error beginning transaction: %v\n", err)
 		return err
 	}
 
-	for _, u := range insertElement {
-		err = AddUrl(db, u, tableName)
+	for _, subd := range insertElement {
+		err = AddSubs(db, subd, url)
 		if err != nil {
+
 			tx.Rollback()
 			return err
 		}
@@ -118,50 +130,21 @@ func SubdomainEnum(config Configuration, url string, db *sql.DB) error {
 func createTableIfNotExists(db *sql.DB, tableName string) error {
 	_, err := db.Exec(fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
-			id INTEGER PRIMARY KEY,
-			url TEXT
+			lastModified DATE DEFAULT CURRENT_TIMESTAMP,
+			subdomain TEXT PRIMARY KEY
 		)
 	`, tableName))
 	return err
 }
-
-func getUrlsFromTable(db *sql.DB, tableName string) ([]string, error) {
-	selectStmt, err := db.Prepare(fmt.Sprintf("SELECT url FROM %s", tableName))
-	if err != nil {
-		return nil, err
-	}
-	defer selectStmt.Close()
-
-	rows, err := selectStmt.Query()
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var urls []string
-	for rows.Next() {
-		var u string
-		if err := rows.Scan(&u); err != nil {
-			return nil, err
-		}
-		urls = append(urls, u)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return urls, nil
-}
-
-func checkErr(err error) {
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-	}
-}
-
-func AddUrl(db *sql.DB, url string, tableName string) error {
-	_, err := db.Exec(fmt.Sprintf("INSERT INTO %s (url) VALUES (?)", tableName), url)
+func createSubsTableIfNotExists(db *sql.DB) error {
+	_, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS subdomain (
+			lastModified DATE DEFAULT CURRENT_TIMESTAMP,
+			subdomain TEXT PRIMARY KEY,
+			domain TEXT
+		)
+	`)
 	return err
 }
+
 

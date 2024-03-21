@@ -15,7 +15,7 @@ func GetWorkingDirectory() string{
 
 	_, err = os.Stat(dirPath)
 	if os.IsNotExist(err) {
-		err = os.Mkdir(dirPath, 0755) // 0755 is the permission mode
+		err = os.Mkdir(dirPath, 0755) 
 		if err != nil {
 			fmt.Println("Error creating directory:", err)
 			os.Exit(1)

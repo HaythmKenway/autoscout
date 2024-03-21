@@ -9,23 +9,24 @@ import (
 func main(){
 	tgt := flag.String("u","", "Add Host")
 	deamon := flag.Bool("d",false, "Run Autoscout in deamon mode")
-	msg := flag.String("m", "", "Add Message")
+	cleardb := flag.Bool("reset",false, "Clear All database")
 	flag.Parse()
+	if(*cleardb){
+		db.ClearDB()
+	}
+	if(*tgt != ""){
+		fmt.Println("adding target")
+		db.AddTarget(*tgt);
+	}
 	if(*deamon){
 	for true{
 		fmt.Println("running as deamon")
-		db.Cron();
+		StartUp()
 	fmt.Println("next job in ",time.Hour/2)
 	time.Sleep(time.Hour/2)
 	}}
-	if(*msg != ""){
-		fmt.Println("adding message")
-		}
-	if(*tgt != ""){
-		fmt.Println("adding target")
-		db.AddTarget(*tgt);}
 	return
-
-
-
+}
+func StartUp(){
+	db.Cron()
 }
