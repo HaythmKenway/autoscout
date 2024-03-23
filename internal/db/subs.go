@@ -3,40 +3,57 @@ package db
 import (
 	"database/sql"
 	"fmt"
-	"log"
-
+	"github.com/charmbracelet/log"
 	"github.com/HaythmKenway/autoscout/pkg/notifier"
 	"github.com/HaythmKenway/autoscout/pkg/subdomain"
 	"github.com/HaythmKenway/autoscout/pkg/utils"
 )
+func GetSubs(domain string) ([]string, error) {
+	config := Configuration{
+		DatabaseFile: utils.GetWorkingDirectory() + "/autoscout.db",
+	}
+	db, err := openDatabase(config.DatabaseFile)
+	if err != nil {
+		log.Errorf("Error opening database: %v\n", err)
+		return nil,err
+	}
+	defer db.Close()
 
+	createSubsTableIfNotExists(db)
+	return getSubsFromTable(db, domain)
+}
 func SubdomainEnum(config Configuration, url string, db *sql.DB) error {
 	err := createSubsTableIfNotExists(db)
 	if err != nil {
+		log.Errorf("Error creating subdomain table: %v\n", err)
 		return err
 	}
 
 	prev, err := getSubsFromTable(db, url)
 	if err != nil {
+		log.Errorf("Error getting subdomains from table: %v\n", err)
 		return err
 	}
 
 	now, err := subdomain.Subdomain(url)
 	if err != nil {
+		log.Errorf("Error getting subdomains: %v\n", err)
 		return err
 	}
-
+	log.Infof("Previous subdomains: %v\n", prev)
 	insertElement := utils.ElementsOnlyInNow(prev, now)
+	log.Infof("New subdomains: %v\n", insertElement)
 	notifier.ClassifyNotification(insertElement)
 	tx, err := db.Begin()
 	if err != nil {
+		log.Errorf("Error beginning transaction: %v\n", err)
 		return err
 	}
 
 	for _, subd := range insertElement {
 		err = AddSubs(db, subd, url)
 		if err != nil {
-
+		log.Errorf("Error adding subdomain to database: %v\n", err)
 			tx.Rollback()
 			return err
 		}

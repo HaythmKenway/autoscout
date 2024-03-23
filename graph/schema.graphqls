@@ -1,0 +1,24 @@
+# GraphQL schema example
+#
+# https://gqlgen.com/getting-started/
+
+
+type Target {
+ target : String!
+ lastModified: String!
+}
+
+type Query {
+  targets: [Target!]!
+  subDomain(target: String!): [Target!]!
+}
+
+input TargetInput {
+  target: String!
+}
+
+type Mutation {
+  addTarget(input: TargetInput!): Target!
+  removeTarget(input: TargetInput!): Target!
+}
+

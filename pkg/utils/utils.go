@@ -46,15 +46,12 @@ func RemoveSpecialCharacters(input string) string {
 	return processedString
 }
 func ElementsOnlyInNow(prev []string, now []string) []string {
-    // Create a map to store elements from prev.
     elementsInPrev := make(map[string]struct{})
 
-    // Iterate through prev and store elements in the map.
     for _, p := range prev {
         elementsInPrev[p] = struct{}{}
     }
 
-    // Find elements that are in now but not in prev.
     elementsOnlyInNow := []string{}
     for _, n := range now {
         if _, exists := elementsInPrev[n]; !exists {
