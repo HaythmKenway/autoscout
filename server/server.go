@@ -29,7 +29,7 @@ func Server() {
     r.Use(corsMiddleware())
 	r.POST("/query", graphqlHandler())
 	r.GET("/", playgroundHandler())
-	r.Run(":8080")
+	r.Run(":8000")
 }
 func corsMiddleware() gin.HandlerFunc {
     return func(c *gin.Context) {

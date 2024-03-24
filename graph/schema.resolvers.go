@@ -65,6 +65,21 @@ func (r *queryResolver) SubDomain(ctx context.Context, target string) ([]*model.
 	return result, nil
 }
 
+// RunScan is the resolver for the runScan field.
+func (r *queryResolver) RunScan(ctx context.Context, target string) ([]*model.Target, error) {
+	subDomains, err := db.GetSubs(target)
+	if err != nil {
+		return nil, err
+	}
+	var result []*model.Target
+	for _, subDomain := range subDomains {
+		result = append(result, &model.Target{
+			Target: subDomain,
+		})
+	}
+	return result, nil
+}
+
 // Mutation returns MutationResolver implementation.
 func (r *Resolver) Mutation() MutationResolver { return &mutationResolver{r} }
 

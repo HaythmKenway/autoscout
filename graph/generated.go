@@ -53,12 +53,14 @@ type ComplexityRoot struct {
 	}
 
 	Query struct {
+		RunScan   func(childComplexity int, target string) int
 		SubDomain func(childComplexity int, target string) int
 		Targets   func(childComplexity int) int
 	}
 
 	Target struct {
 		LastModified func(childComplexity int) int
+		Status       func(childComplexity int) int
 		Target       func(childComplexity int) int
 	}
 }
@@ -70,6 +72,7 @@ type MutationResolver interface {
 type QueryResolver interface {
 	Targets(ctx context.Context) ([]*model.Target, error)
 	SubDomain(ctx context.Context, target string) ([]*model.Target, error)
+	RunScan(ctx context.Context, target string) ([]*model.Target, error)
 }
 
 type executableSchema struct {
@@ -115,6 +118,18 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 
 		return e.complexity.Mutation.RemoveTarget(childComplexity, args["input"].(model.TargetInput)), true
 
+	case "Query.runScan":
+		if e.complexity.Query.RunScan == nil {
+			break
+		}
+
+		args, err := ec.field_Query_runScan_args(context.TODO(), rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.RunScan(childComplexity, args["target"].(string)), true
+
 	case "Query.subDomain":
 		if e.complexity.Query.SubDomain == nil {
 			break
@@ -140,6 +155,13 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 		}
 
 		return e.complexity.Target.LastModified(childComplexity), true
+
+	case "Target.status":
+		if e.complexity.Target.Status == nil {
+			break
+		}
+
+		return e.complexity.Target.Status(childComplexity), true
 
 	case "Target.target":
 		if e.complexity.Target.Target == nil {
@@ -318,6 +340,21 @@ func (ec *executionContext) field_Query___type_args(ctx context.Context, rawArgs
 	return args, nil
 }
 
+func (ec *executionContext) field_Query_runScan_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
+	var err error
+	args := map[string]interface{}{}
+	var arg0 string
+	if tmp, ok := rawArgs["target"]; ok {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("target"))
+		arg0, err = ec.unmarshalNString2string(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["target"] = arg0
+	return args, nil
+}
+
 func (ec *executionContext) field_Query_subDomain_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
 	var err error
 	args := map[string]interface{}{}
@@ -414,6 +451,8 @@ func (ec *executionContext) fieldContext_Mutation_addTarget(ctx context.Context,
 				return ec.fieldContext_Target_target(ctx, field)
 			case "lastModified":
 				return ec.fieldContext_Target_lastModified(ctx, field)
+			case "status":
+				return ec.fieldContext_Target_status(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Target", field.Name)
 		},
@@ -475,6 +514,8 @@ func (ec *executionContext) fieldContext_Mutation_removeTarget(ctx context.Conte
 				return ec.fieldContext_Target_target(ctx, field)
 			case "lastModified":
 				return ec.fieldContext_Target_lastModified(ctx, field)
+			case "status":
+				return ec.fieldContext_Target_status(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Target", field.Name)
 		},
@@ -536,6 +577,8 @@ func (ec *executionContext) fieldContext_Query_targets(ctx context.Context, fiel
 				return ec.fieldContext_Target_target(ctx, field)
 			case "lastModified":
 				return ec.fieldContext_Target_lastModified(ctx, field)
+			case "status":
+				return ec.fieldContext_Target_status(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Target", field.Name)
 		},
@@ -586,6 +629,8 @@ func (ec *executionContext) fieldContext_Query_subDomain(ctx context.Context, fi
 				return ec.fieldContext_Target_target(ctx, field)
 			case "lastModified":
 				return ec.fieldContext_Target_lastModified(ctx, field)
+			case "status":
+				return ec.fieldContext_Target_status(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Target", field.Name)
 		},
@@ -598,6 +643,69 @@ func (ec *executionContext) fieldContext_Query_subDomain(ctx context.Context, fi
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Query_subDomain_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_runScan(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_runScan(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().RunScan(rctx, fc.Args["target"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]*model.Target)
+	fc.Result = res
+	return ec.marshalNTarget2ᚕᚖgithubᚗcomᚋHaythmKenwayᚋautoscoutᚋgraphᚋmodelᚐTargetᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Query_runScan(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "target":
+				return ec.fieldContext_Target_target(ctx, field)
+			case "lastModified":
+				return ec.fieldContext_Target_lastModified(ctx, field)
+			case "status":
+				return ec.fieldContext_Target_status(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Target", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_runScan_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -809,6 +917,50 @@ func (ec *executionContext) _Target_lastModified(ctx context.Context, field grap
 }
 
 func (ec *executionContext) fieldContext_Target_lastModified(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Target",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Target_status(ctx context.Context, field graphql.CollectedField, obj *model.Target) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Target_status(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Status, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Target_status(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "Target",
 		Field:      field,
@@ -2748,6 +2900,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "runScan":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_runScan(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
 		case "__type":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Query___type(ctx, field)
@@ -2797,6 +2971,11 @@ func (ec *executionContext) _Target(ctx context.Context, sel ast.SelectionSet, o
 			}
 		case "lastModified":
 			out.Values[i] = ec._Target_lastModified(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "status":
+			out.Values[i] = ec._Target_status(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}

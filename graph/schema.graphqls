@@ -6,11 +6,13 @@
 type Target {
  target : String!
  lastModified: String!
+ status: String!
 }
 
 type Query {
   targets: [Target!]!
   subDomain(target: String!): [Target!]!
+  runScan(target: String!): [Target!]!
 }
 
 input TargetInput {

@@ -3,11 +3,13 @@ package db
 import (
 	"database/sql"
 	"fmt"
-	"github.com/charmbracelet/log"
+
 	"github.com/HaythmKenway/autoscout/pkg/notifier"
 	"github.com/HaythmKenway/autoscout/pkg/subdomain"
 	"github.com/HaythmKenway/autoscout/pkg/utils"
+	"github.com/charmbracelet/log"
 )
+
 func GetSubs(domain string) ([]string, error) {
 	config := Configuration{
 		DatabaseFile: utils.GetWorkingDirectory() + "/autoscout.db",
@@ -15,7 +17,7 @@ func GetSubs(domain string) ([]string, error) {
 	db, err := openDatabase(config.DatabaseFile)
 	if err != nil {
 		log.Errorf("Error opening database: %v\n", err)
-		return nil,err
+		return nil, err
 	}
 	defer db.Close()
 
@@ -53,7 +55,7 @@ func SubdomainEnum(config Configuration, url string, db *sql.DB) error {
 	for _, subd := range insertElement {
 		err = AddSubs(db, subd, url)
 		if err != nil {
-		log.Errorf("Error adding subdomain to database: %v\n", err)
+			log.Errorf("Error adding subdomain to database: %v\n", err)
 			tx.Rollback()
 			return err
 		}

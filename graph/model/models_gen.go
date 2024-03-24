@@ -11,6 +11,7 @@ type Query struct {
 type Target struct {
 	Target       string `json:"target"`
 	LastModified string `json:"lastModified"`
+	Status       string `json:"status"`
 }
 
 type TargetInput struct {
