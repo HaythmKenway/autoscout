@@ -18,7 +18,8 @@ func (r *mutationResolver) AddTarget(ctx context.Context, input model.TargetInpu
 		return nil, err
 	}
 	target := &model.Target{
-		Target: status,
+		Target: input.Target,
+		Status: status,
 	}
 	return target, nil
 }
@@ -30,7 +31,8 @@ func (r *mutationResolver) RemoveTarget(ctx context.Context, input model.TargetI
 		return nil, err
 	}
 	target := &model.Target{
-		Target: status,
+		Target: input.Target,
+		Status: status,
 	}
 	return target, nil
 }
@@ -67,7 +69,7 @@ func (r *queryResolver) SubDomain(ctx context.Context, target string) ([]*model.
 
 // RunScan is the resolver for the runScan field.
 func (r *queryResolver) RunScan(ctx context.Context, target string) ([]*model.Target, error) {
-	subDomains, err := db.GetSubs(target)
+	subDomains, err := db.SubdomainFuzz(target)
 	if err != nil {
 		return nil, err
 	}

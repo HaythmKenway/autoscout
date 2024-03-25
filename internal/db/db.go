@@ -13,43 +13,41 @@ type Configuration struct {
 	DatabaseFile string
 }
 
-func ClearDB() {
+func ClearDB() error {
 	cmd := exec.Command("rm", utils.GetWorkingDirectory()+"/autoscout.db")
-	err := cmd.Run()
-	if err != nil {
-		fmt.Println(err)
-	}
+	return cmd.Run()
 }
+
 func Deamon() {
 	config := Configuration{
 		DatabaseFile: utils.GetWorkingDirectory() + "/autoscout.db",
 	}
 	db, err := openDatabase(config.DatabaseFile)
 	if err != nil {
+		fmt.Println(err)
 		return
 	}
 	defer db.Close()
-	err = createTableIfNotExists(db, "targets")
-	if err != nil {
+
+	if err := createTableIfNotExists(db, "targets"); err != nil {
+		fmt.Println(err)
 		return
 	}
 
 	urls, err := getTargetsFromTable(db)
 	if err != nil {
+		fmt.Println(err)
 		return
 	}
+
 	for _, url := range urls {
-		err := SubdomainEnum(config, url, db)
-		if err != nil {
+		if err := SubdomainEnum(config, url, db); err != nil {
+			fmt.Println(err)
 		}
 	}
 }
-func openDatabase(filename string) (*sql.DB, error) {
-	db, err := sql.Open("sqlite3", filename)
-	if err != nil {
-		return nil, err
-	}
-	return db, nil
-}
 
+func openDatabase(filename string) (*sql.DB, error) {
+	return sql.Open("sqlite3", filename)
+}
 

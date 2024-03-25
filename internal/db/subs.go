@@ -24,6 +24,20 @@ func GetSubs(domain string) ([]string, error) {
 	createSubsTableIfNotExists(db)
 	return getSubsFromTable(db, domain)
 }
+func SubdomainFuzz(domain string) ([]string, error) {
+	config := Configuration{
+		DatabaseFile: utils.GetWorkingDirectory() + "/autoscout.db",
+	}
+	db, err := openDatabase(config.DatabaseFile)
+	if err != nil {
+		log.Errorf("Error opening database: %v\n", err)
+		return nil, err
+	}
+	SubdomainEnum(config, domain, db)
+	defer db.Close()
+	return getSubsFromTable(db, domain)
+}
+
 func SubdomainEnum(config Configuration, url string, db *sql.DB) error {
 	err := createSubsTableIfNotExists(db)
 	if err != nil {

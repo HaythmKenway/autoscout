@@ -12,6 +12,7 @@ import (
 )
 
 func Subdomain(domain string) ([]string, error) {
+	utils.Logger("performing subdomain Enumeration for "+domain, 1)
 	subfinderOpts := &runner.Options{
 		Threads:            10, // Thread controls the number of threads to use for active enumerations
 		Timeout:            30, // Timeout is the seconds to wait for sources to respond
