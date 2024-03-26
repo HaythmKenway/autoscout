@@ -1,52 +1,30 @@
 package db
 
 import (
-	"database/sql"
 	URL "net/url"
-
-	"github.com/HaythmKenway/autoscout/pkg/localUtils"
 )
 
-func GetDomains() ([]string, error) {
-	config := Configuration{
-		DatabaseFile: localUtils.GetWorkingDirectory() + "/autoscout.db",
-	}
-	db, err := openDatabase(config.DatabaseFile)
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
-
-	createTableIfNotExists(db, "targets")
-	return getTargetsFromTable(db)
-}
-func AddTarget(url string) (string, error) {
+func AddTarget(url string) (string, error) { //*****controller//*****
 	u, err := URL.ParseRequestURI("http://" + url)
 	url = u.Hostname()
 	if err != nil {
 		return "Invalid Domain", err
 	}
-	config := Configuration{
-		DatabaseFile: localUtils.GetWorkingDirectory() + "/autoscout.db",
-	}
-	db, err := openDatabase(config.DatabaseFile)
+	db, err := openDatabase()
 	if err != nil {
 		return "Error opening Database", err
 	}
 	defer db.Close()
 
-	createTableIfNotExists(db, "targets")
+	createTargetTableIfNotExists()
 	_, err = db.Exec("INSERT INTO targets (subdomain) VALUES (?)", url)
 	if err != nil {
 		return "Error inserting into Database", err
 	}
 	return "Target added successfully", nil
 }
-func RemoveTarget(url string) (string, error) {
-	config := Configuration{
-		DatabaseFile: localUtils.GetWorkingDirectory() + "/autoscout.db",
-	}
-	db, err := openDatabase(config.DatabaseFile)
+func RemoveTarget(url string) (string, error) { //*****controller//*****
+	db, err := openDatabase()
 	if err != nil {
 		return "Error opening Database", err
 	}
@@ -59,7 +37,13 @@ func RemoveTarget(url string) (string, error) {
 	return "Target removed successfully", nil
 }
 
-func getTargetsFromTable(db *sql.DB) ([]string, error) {
+func GetTargetsFromTable() ([]string, error) {
+	db, err := openDatabase()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
 	selectStmt, err := db.Prepare("SELECT subdomain FROM targets")
 	if err != nil {
 		return nil, err

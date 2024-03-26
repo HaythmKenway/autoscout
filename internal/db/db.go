@@ -9,44 +9,39 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-type Configuration struct {
-	DatabaseFile string
-}
+var DatabaseFile = localUtils.GetWorkingDirectory() + "/autoscout.db"
 
 func ClearDB() error {
-	cmd := exec.Command("rm", localUtils.GetWorkingDirectory()+"/autoscout.db")
+	cmd := exec.Command("rm", DatabaseFile)
 	return cmd.Run()
 }
 
 func Deamon() {
-	config := Configuration{
-		DatabaseFile: localUtils.GetWorkingDirectory() + "/autoscout.db",
-	}
-	db, err := openDatabase(config.DatabaseFile)
+	db, err := openDatabase()
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 	defer db.Close()
 
-	if err := createTableIfNotExists(db, "targets"); err != nil {
+	if err := createTargetTableIfNotExists(); err != nil {
 		fmt.Println(err)
 		return
 	}
 
-	urls, err := getTargetsFromTable(db)
+	urls, err := GetTargetsFromTable()
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 
 	for _, url := range urls {
-		if err := SubdomainEnum(config, url, db); err != nil {
+		if err := SubdomainEnum(url); err != nil {
 			fmt.Println(err)
 		}
 	}
 }
 
-func openDatabase(filename string) (*sql.DB, error) {
-	return sql.Open("sqlite3", filename)
+func openDatabase() (*sql.DB, error) {
+	return sql.Open("sqlite3", DatabaseFile)
 }

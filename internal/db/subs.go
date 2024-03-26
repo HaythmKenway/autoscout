@@ -10,42 +10,21 @@ import (
 	"github.com/charmbracelet/log"
 )
 
-func GetSubs(domain string) ([]string, error) {
-	config := Configuration{
-		DatabaseFile: localUtils.GetWorkingDirectory() + "/autoscout.db",
-	}
-	db, err := openDatabase(config.DatabaseFile)
+func SubdomainEnum(url string) error { //*****controller//*****
+	db, err := openDatabase()
 	if err != nil {
-		log.Errorf("Error opening database: %v\n", err)
-		return nil, err
+		log.Printf("Error opening database: %v\n", err)
+		return err
 	}
 	defer db.Close()
 
-	createSubsTableIfNotExists(db)
-	return getSubsFromTable(db, domain)
-}
-func SubdomainFuzz(domain string) ([]string, error) {
-	config := Configuration{
-		DatabaseFile: localUtils.GetWorkingDirectory() + "/autoscout.db",
-	}
-	db, err := openDatabase(config.DatabaseFile)
-	if err != nil {
-		log.Errorf("Error opening database: %v\n", err)
-		return nil, err
-	}
-	SubdomainEnum(config, domain, db)
-	defer db.Close()
-	return getSubsFromTable(db, domain)
-}
-
-func SubdomainEnum(config Configuration, url string, db *sql.DB) error {
-	err := createSubsTableIfNotExists(db)
+	err = createSubsTableIfNotExists()
 	if err != nil {
 		log.Errorf("Error creating subdomain table: %v\n", err)
 		return err
 	}
 
-	prev, err := getSubsFromTable(db, url)
+	prev, err := GetSubsFromTable(url)
 	if err != nil {
 		log.Errorf("Error getting subdomains from table: %v\n", err)
 		return err
@@ -86,7 +65,14 @@ func SubdomainEnum(config Configuration, url string, db *sql.DB) error {
 	return nil
 }
 
-func getSubsFromTable(db *sql.DB, domain string) ([]string, error) {
+func GetSubsFromTable(domain string) ([]string, error) {
+	db, err := openDatabase()
+	if err != nil {
+		log.Printf("Error opening database: %v\n", err)
+		return nil, err
+	}
+	defer db.Close()
+
 	selectStmt, err := db.Prepare("SELECT subdomain FROM subdomain WHERE domain = ?")
 	if err != nil {
 		log.Printf("Error preparing select statement: %v\n", err)
@@ -115,13 +101,6 @@ func getSubsFromTable(db *sql.DB, domain string) ([]string, error) {
 
 	return urls, nil
 }
-
-func checkErr(err error) {
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-	}
-}
-
 func AddSubs(db *sql.DB, url string, domain string) error {
 	_, err := db.Exec("INSERT INTO subdomain (subdomain,domain) VALUES (?,?)", url, domain)
 	return err

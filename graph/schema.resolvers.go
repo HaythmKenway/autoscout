@@ -39,7 +39,7 @@ func (r *mutationResolver) RemoveTarget(ctx context.Context, input model.TargetI
 
 // Targets is the resolver for the targets field.
 func (r *queryResolver) Targets(ctx context.Context) ([]*model.Target, error) {
-	targets, err := db.GetDomains()
+	targets, err := db.GetTargetsFromTable()
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +54,7 @@ func (r *queryResolver) Targets(ctx context.Context) ([]*model.Target, error) {
 
 // SubDomain is the resolver for the subDomain field.
 func (r *queryResolver) SubDomain(ctx context.Context, target string) ([]*model.Target, error) {
-	subDomains, err := db.GetSubs(target)
+	subDomains, err := db.GetSubsFromTable(target)
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +69,7 @@ func (r *queryResolver) SubDomain(ctx context.Context, target string) ([]*model.
 
 // RunScan is the resolver for the runScan field.
 func (r *queryResolver) RunScan(ctx context.Context, target string) ([]*model.Target, error) {
-	subDomains, err := db.SubdomainFuzz(target)
+	subDomains, err := db.GetSubsFromTable(target)
 	if err != nil {
 		return nil, err
 	}
