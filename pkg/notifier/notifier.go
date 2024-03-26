@@ -1,7 +1,6 @@
 package notifier
 
 import (
-	"fmt"
 	"io"
 	"os/exec"
 
@@ -9,22 +8,25 @@ import (
 )
 
 func ClassifyNotification(urls []string) {
-	localUtils.Logger("Notifying targets ", 1)
+	localUtils.Logger("Notifying targets", 1)
 
-	pipeReader, pipeWriter := io.Pipe()
 	cmd := exec.Command("notify", "-mf", "🎯 New Target Found! \n {{data}}")
-	cmd.Stdin = pipeReader
+	stdin, err := cmd.StdinPipe()
+	localUtils.CheckError(err)
+
 	done := make(chan error)
 	go func() {
-		// Start the command and capture any errors
-		err := cmd.Run()
-		done <- err
+		done <- cmd.Run()
 	}()
-	for _, u := range urls {
-		_, err := pipeWriter.Write([]byte(u + "\n"))
-		if err != nil {
-			fmt.Println(err)
-		}
 
+	for _, u := range urls {
+		_, err := io.WriteString(stdin, u+"\n")
+		localUtils.CheckError(err)
 	}
+
+	err = stdin.Close()
+	localUtils.CheckError(err)
+
+	err = <-done
+	localUtils.CheckError(err)
 }

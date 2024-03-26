@@ -1,7 +1,6 @@
 package localUtils
 
 import (
-	"fmt"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -18,14 +17,10 @@ func GetWorkingDirectory() string {
 	_, err = os.Stat(dirPath)
 	if os.IsNotExist(err) {
 		err = os.Mkdir(dirPath, 0755)
-		if err != nil {
-			os.Exit(1)
-		}
+		CheckError(err)
 		return dirPath
-	} else if err != nil {
-		fmt.Println("Error:", err)
-		os.Exit(1)
 	}
+	CheckError(err)
 	return dirPath
 }
 
@@ -42,12 +37,12 @@ func ParseSubdomains(output string) []string {
 
 	return subdomains
 }
-func RemoveSpecialCharacters(input string) string {
 
+func RemoveSpecialCharacters(input string) string {
 	regex := regexp.MustCompile("[^a-zA-Z0-9\\s]+")
-	processedString := regex.ReplaceAllString(input, "")
-	return processedString
+	return regex.ReplaceAllString(input, "")
 }
+
 func ElementsOnlyInNow(prev []string, now []string) []string {
 	elementsInPrev := make(map[string]struct{})
 
@@ -55,7 +50,7 @@ func ElementsOnlyInNow(prev []string, now []string) []string {
 		elementsInPrev[p] = struct{}{}
 	}
 
-	elementsOnlyInNow := []string{}
+	var elementsOnlyInNow []string
 	for _, n := range now {
 		if _, exists := elementsInPrev[n]; !exists {
 			elementsOnlyInNow = append(elementsOnlyInNow, n)
@@ -63,8 +58,14 @@ func ElementsOnlyInNow(prev []string, now []string) []string {
 	}
 
 	return elementsOnlyInNow
-
 }
+
+func CheckError(err error) {
+	if err != nil {
+		Logger(err.Error(), 2)
+	}
+}
+
 func Logger(str string, sc int) {
 	f, err := os.OpenFile(GetWorkingDirectory()+"/go.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
@@ -79,7 +80,5 @@ func Logger(str string, sc int) {
 		log.Error(str)
 	case 3:
 		log.Debug(str)
-
 	}
-
 }

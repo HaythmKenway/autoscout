@@ -13,26 +13,26 @@ import (
 
 func Subdomain(domain string) ([]string, error) {
 	localUtils.Logger("performing subdomain Enumeration for "+domain, 1)
+
 	subfinderOpts := &runner.Options{
-		Threads:            10, // Thread controls the number of threads to use for active enumerations
-		Timeout:            30, // Timeout is the seconds to wait for sources to respond
-		MaxEnumerationTime: 10, // MaxEnumerationTime is the maximum amount of time in mins to wait for enumeration
+		Threads:            10,
+		Timeout:            30,
+		MaxEnumerationTime: 10,
 	}
 
 	log.SetFlags(0)
 
 	subfinder, err := runner.NewRunner(subfinderOpts)
 	if err != nil {
-		log.Fatalf("failed to create subfinder runner: %v", err)
+		return nil, err
 	}
 
 	output := &bytes.Buffer{}
-	if err = subfinder.EnumerateSingleDomainWithCtx(context.Background(), domain, []io.Writer{output}); err != nil {
-		log.Fatalf("failed to enumerate single domain: %v", err)
+	if err := subfinder.EnumerateSingleDomainWithCtx(context.Background(), domain, []io.Writer{output}); err != nil {
+		return nil, err
 	}
 
 	subdomains := localUtils.ParseSubdomains(output.String())
-
 	sort.Strings(subdomains)
 
 	return subdomains, nil
