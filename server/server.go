@@ -2,7 +2,7 @@ package server
 
 import (
 	"github.com/HaythmKenway/autoscout/graph"
-	"github.com/HaythmKenway/autoscout/pkg/utils"
+	"github.com/HaythmKenway/autoscout/pkg/localUtils"
 	"github.com/gin-gonic/gin"
 
 	"github.com/99designs/gqlgen/graphql/handler"
@@ -25,7 +25,7 @@ func playgroundHandler() gin.HandlerFunc {
 }
 
 func Server() {
-	utils.Logger("Starting Gin Server", 1)
+	localUtils.Logger("Starting Gin Server", 1)
 
 	r := gin.Default()
 	r.Use(corsMiddleware())

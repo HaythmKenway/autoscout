@@ -4,15 +4,15 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/HaythmKenway/autoscout/pkg/localUtils"
 	"github.com/HaythmKenway/autoscout/pkg/notifier"
 	"github.com/HaythmKenway/autoscout/pkg/subdomain"
-	"github.com/HaythmKenway/autoscout/pkg/utils"
 	"github.com/charmbracelet/log"
 )
 
 func GetSubs(domain string) ([]string, error) {
 	config := Configuration{
-		DatabaseFile: utils.GetWorkingDirectory() + "/autoscout.db",
+		DatabaseFile: localUtils.GetWorkingDirectory() + "/autoscout.db",
 	}
 	db, err := openDatabase(config.DatabaseFile)
 	if err != nil {
@@ -26,7 +26,7 @@ func GetSubs(domain string) ([]string, error) {
 }
 func SubdomainFuzz(domain string) ([]string, error) {
 	config := Configuration{
-		DatabaseFile: utils.GetWorkingDirectory() + "/autoscout.db",
+		DatabaseFile: localUtils.GetWorkingDirectory() + "/autoscout.db",
 	}
 	db, err := openDatabase(config.DatabaseFile)
 	if err != nil {
@@ -57,7 +57,7 @@ func SubdomainEnum(config Configuration, url string, db *sql.DB) error {
 		return err
 	}
 	log.Infof("Previous subdomains: %v\n", prev)
-	insertElement := utils.ElementsOnlyInNow(prev, now)
+	insertElement := localUtils.ElementsOnlyInNow(prev, now)
 	log.Infof("New subdomains: %v\n", insertElement)
 	notifier.ClassifyNotification(insertElement)
 	tx, err := db.Begin()

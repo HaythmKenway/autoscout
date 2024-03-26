@@ -24,13 +24,23 @@ func createSubsTableIfNotExists(db *sql.DB) error {
 	`)
 	return err
 }
-func createUrlsTableIfNotExists(db *sql.DB) error {
+
+func createUrlsTableIfNotExist(db *sql.DB) error{
 	_, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS urls (
-			subdomain TEXT,
+			domain TEXT,
+			title TEXT,
 			url TEXT PRIMARY KEY,
-			statusCode INTEGER,
-			ipAddress TEXT,
-			lastModified DATE DEFAULT CURRENT_TIMESTAMP)`)
+			host TEXT,
+			scheme TEXT,
+			a TEXT,
+			cname TEXT,
+			tech TEXT,
+			ip TEXT,
+			port TEXT,
+			status_code TEXT,
+			lastModified DATE DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
 	return err
 }

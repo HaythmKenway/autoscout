@@ -7,12 +7,12 @@ import (
 	"log"
 	"sort"
 
-	"github.com/HaythmKenway/autoscout/pkg/utils"
+	"github.com/HaythmKenway/autoscout/pkg/localUtils"
 	"github.com/projectdiscovery/subfinder/v2/pkg/runner"
 )
 
 func Subdomain(domain string) ([]string, error) {
-	utils.Logger("performing subdomain Enumeration for "+domain, 1)
+	localUtils.Logger("performing subdomain Enumeration for "+domain, 1)
 	subfinderOpts := &runner.Options{
 		Threads:            10, // Thread controls the number of threads to use for active enumerations
 		Timeout:            30, // Timeout is the seconds to wait for sources to respond
@@ -31,7 +31,7 @@ func Subdomain(domain string) ([]string, error) {
 		log.Fatalf("failed to enumerate single domain: %v", err)
 	}
 
-	subdomains := utils.ParseSubdomains(output.String())
+	subdomains := localUtils.ParseSubdomains(output.String())
 
 	sort.Strings(subdomains)
 

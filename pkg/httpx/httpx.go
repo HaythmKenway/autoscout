@@ -1,44 +1,61 @@
 package httpx
 
 import (
+	"encoding/json"
 	"fmt"
-	"log"
+	"os/exec"
+	"reflect"
+	"strings"
 
-	//	"github.com/projectdiscovery/goflags"
-	"github.com/HaythmKenway/autoscout/pkg/utils"
-	"github.com/projectdiscovery/gologger"
-	"github.com/projectdiscovery/gologger/levels"
-	"github.com/projectdiscovery/httpx/runner"
+	"github.com/HaythmKenway/autoscout/internal/db"
+	"github.com/HaythmKenway/autoscout/pkg/localUtils"
 )
 
-func Httpx(domains []string) (string, error) {
-	utils.Logger("Running Httpx on targets ", 1)
-	gologger.DefaultLogger.SetMaxLevel(levels.LevelVerbose)
-	options := runner.Options{
-		Methods:         "GET",
-		InputTargetHost: domains,
-		OutputIP:        true,
-		StatusCode:      true,
-		OnResult: func(r runner.Result) {
-			// handle error
-			if r.Err != nil {
-				fmt.Printf("[Err] %s: %s\n", r.Input, r.Err)
-				return
+func assertInterfaces(v interface{}) string {
+
+	if v == nil {
+		return ""
+	}
+
+	if s, ok := v.(string); ok {
+		return s
+	}
+	if reflect.TypeOf(v).Kind() == reflect.Slice {
+		slice := reflect.ValueOf(v)
+		var result strings.Builder
+		for i := 0; i < slice.Len(); i++ {
+			if i > 0 {
+				result.WriteString(", ")
 			}
-			fmt.Printf("%s %s %d\n", r.Input, r.Host, r.StatusCode)
-		},
+			result.WriteString(slice.Index(i).Interface().(string))
+		}
+		return result.String()
 	}
 
-	if err := options.ValidateOptions(); err != nil {
-		log.Fatal(err)
-	}
+	return ""
+}
 
-	httpxRunner, err := runner.New(&options)
+func Httpx(domain string) {
+	localUtils.Logger("started httpx", 1)
+	cmd := exec.Command("httpx", "-u", domain, "-title", "-x", "get", "-status-code", "-ip", "-json", "-fr")
+	stdout, err := cmd.Output()
 	if err != nil {
-		log.Fatal(err)
+		localUtils.Logger(fmt.Sprint(err), 2)
 	}
-	defer httpxRunner.Close()
+	var result map[string]interface{}
+	json.Unmarshal([]byte(stdout), &result)
 
-	httpxRunner.RunEnumeration()
-	return "", nil
+	title := assertInterfaces(result["title"])
+	url := assertInterfaces(result["url"])
+	host := assertInterfaces(result["host"])
+	scheme := assertInterfaces(result["scheme"])
+	a := assertInterfaces(result["a"])
+	cname := assertInterfaces(result["cname"])
+	tech := assertInterfaces(result["tech"])
+	status_code := assertInterfaces(result["status_code"])
+	port := assertInterfaces(result["port"])
+	ip := assertInterfaces(result["ip"])
+
+
+	db.AddUrl(title,url,host,scheme,a,cname,tech,ip,port,status_code)
 }

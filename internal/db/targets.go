@@ -3,12 +3,13 @@ package db
 import (
 	"database/sql"
 	URL "net/url"
-	"github.com/HaythmKenway/autoscout/pkg/utils"
+
+	"github.com/HaythmKenway/autoscout/pkg/localUtils"
 )
 
 func GetDomains() ([]string, error) {
 	config := Configuration{
-		DatabaseFile: utils.GetWorkingDirectory() + "/autoscout.db",
+		DatabaseFile: localUtils.GetWorkingDirectory() + "/autoscout.db",
 	}
 	db, err := openDatabase(config.DatabaseFile)
 	if err != nil {
@@ -20,13 +21,13 @@ func GetDomains() ([]string, error) {
 	return getTargetsFromTable(db)
 }
 func AddTarget(url string) (string, error) {
-	u, err := URL.ParseRequestURI("http://"+url)
+	u, err := URL.ParseRequestURI("http://" + url)
 	url = u.Hostname()
 	if err != nil {
 		return "Invalid Domain", err
 	}
 	config := Configuration{
-		DatabaseFile: utils.GetWorkingDirectory() + "/autoscout.db",
+		DatabaseFile: localUtils.GetWorkingDirectory() + "/autoscout.db",
 	}
 	db, err := openDatabase(config.DatabaseFile)
 	if err != nil {
@@ -43,7 +44,7 @@ func AddTarget(url string) (string, error) {
 }
 func RemoveTarget(url string) (string, error) {
 	config := Configuration{
-		DatabaseFile: utils.GetWorkingDirectory() + "/autoscout.db",
+		DatabaseFile: localUtils.GetWorkingDirectory() + "/autoscout.db",
 	}
 	db, err := openDatabase(config.DatabaseFile)
 	if err != nil {

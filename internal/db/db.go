@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os/exec"
 
-	"github.com/HaythmKenway/autoscout/pkg/utils"
+	"github.com/HaythmKenway/autoscout/pkg/localUtils"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -14,13 +14,13 @@ type Configuration struct {
 }
 
 func ClearDB() error {
-	cmd := exec.Command("rm", utils.GetWorkingDirectory()+"/autoscout.db")
+	cmd := exec.Command("rm", localUtils.GetWorkingDirectory()+"/autoscout.db")
 	return cmd.Run()
 }
 
 func Deamon() {
 	config := Configuration{
-		DatabaseFile: utils.GetWorkingDirectory() + "/autoscout.db",
+		DatabaseFile: localUtils.GetWorkingDirectory() + "/autoscout.db",
 	}
 	db, err := openDatabase(config.DatabaseFile)
 	if err != nil {
@@ -50,4 +50,3 @@ func Deamon() {
 func openDatabase(filename string) (*sql.DB, error) {
 	return sql.Open("sqlite3", filename)
 }
-

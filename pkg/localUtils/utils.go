@@ -1,4 +1,4 @@
-package utils
+package localUtils
 
 import (
 	"fmt"

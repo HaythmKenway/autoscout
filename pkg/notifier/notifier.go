@@ -5,11 +5,11 @@ import (
 	"io"
 	"os/exec"
 
-	"github.com/HaythmKenway/autoscout/pkg/utils"
+	"github.com/HaythmKenway/autoscout/pkg/localUtils"
 )
 
 func ClassifyNotification(urls []string) {
-	utils.Logger("Notifying targets ", 1)
+	localUtils.Logger("Notifying targets ", 1)
 
 	pipeReader, pipeWriter := io.Pipe()
 	cmd := exec.Command("notify", "-mf", "🎯 New Target Found! \n {{data}}")

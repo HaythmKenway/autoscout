@@ -7,7 +7,7 @@ import (
 
 	"github.com/HaythmKenway/autoscout/internal/db"
 	"github.com/HaythmKenway/autoscout/pkg/httpx"
-	"github.com/HaythmKenway/autoscout/pkg/utils"
+	"github.com/HaythmKenway/autoscout/pkg/localUtils"
 	"github.com/HaythmKenway/autoscout/server"
 )
 
@@ -16,16 +16,13 @@ func main() {
 	servermode := flag.Bool("s", false, "Run Autoscout in server mode")
 	deamon := flag.Bool("d", false, "Run Autoscout in deamon mode")
 	cleardb := flag.Bool("reset", false, "Clear All database")
-	htt := flag.Bool("httpx", false, "Run httpx")
+	htt := flag.String("httpx", "", "Run httpx")
 	flag.Parse()
 	if *cleardb {
 		db.ClearDB()
 	}
-	if *htt {
-		targets := []string{}
-		targets = append(targets, "shop.dyson.tw")
-		targets = append(targets, "dyson.dk")
-		httpx.Httpx(targets)
+	if *htt != "" {
+		httpx.Httpx(*htt)
 	}
 	if *tgt != "" {
 		db.AddTarget(*tgt)
@@ -34,7 +31,7 @@ func main() {
 		server.Server()
 	}
 	if *deamon {
-		utils.Logger("Starting application in deamon mode", 1)
+		localUtils.Logger("Starting application in deamon mode", 1)
 
 		for true {
 			fmt.Println("running as deamon")
