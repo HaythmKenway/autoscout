@@ -9,6 +9,7 @@ import (
 
 	"github.com/HaythmKenway/autoscout/graph/model"
 	"github.com/HaythmKenway/autoscout/internal/db"
+	"github.com/HaythmKenway/autoscout/pkg/localUtils"
 )
 
 // AddTarget is the resolver for the addTarget field.
@@ -80,6 +81,29 @@ func (r *queryResolver) RunScan(ctx context.Context, target string) ([]*model.Ta
 		})
 	}
 	return result, nil
+}
+
+// GetData is the resolver for the getData field.
+func (r *queryResolver) GetData(ctx context.Context, target string) ([]*model.Information, error) {
+	data, err := db.GetDataFromTable(target)
+	localUtils.CheckError(err)
+	if err != nil {
+		return nil, err
+	}
+	var result []*model.Information
+	result = append(result, &model.Information{
+		Title:      data[0],
+		URL:        data[1],
+		Host:       data[2],
+		StatusCode: data[3],
+		Scheme:     data[4],
+		A:          data[5],
+		Cname:      data[6],
+		Tech:       data[7],
+		IP:         data[8],
+		Port:       data[9],
+	})
+	return result, err
 }
 
 // Mutation returns MutationResolver implementation.

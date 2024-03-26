@@ -2,7 +2,6 @@ package db
 
 import (
 	"database/sql"
-	"fmt"
 	"os/exec"
 
 	"github.com/HaythmKenway/autoscout/pkg/localUtils"
@@ -19,25 +18,25 @@ func ClearDB() error {
 func Deamon() {
 	db, err := openDatabase()
 	if err != nil {
-		fmt.Println(err)
+		localUtils.CheckError(err)
 		return
 	}
 	defer db.Close()
 
 	if err := createTargetTableIfNotExists(); err != nil {
-		fmt.Println(err)
+		localUtils.CheckError(err)
 		return
 	}
 
 	urls, err := GetTargetsFromTable()
 	if err != nil {
-		fmt.Println(err)
+		localUtils.CheckError(err)
 		return
 	}
 
 	for _, url := range urls {
 		if err := SubdomainEnum(url); err != nil {
-			fmt.Println(err)
+			localUtils.CheckError(err)
 		}
 	}
 }

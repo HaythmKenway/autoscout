@@ -23,7 +23,7 @@ func AddTarget(url string) (string, error) { //*****controller//*****
 	}
 	return "Target added successfully", nil
 }
-func RemoveTarget(url string) (string, error) { //*****controller//*****
+func RemoveTarget(url string) (string, error) {
 	db, err := openDatabase()
 	if err != nil {
 		return "Error opening Database", err

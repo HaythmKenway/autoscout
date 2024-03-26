@@ -1,11 +1,11 @@
 package db
 
+import "github.com/HaythmKenway/autoscout/pkg/localUtils"
+
 // job done
 func createTargetTableIfNotExists() error {
 	db, err := openDatabase()
-	if err != nil {
-		return err
-	}
+	localUtils.CheckError(err)
 	defer db.Close()
 
 	_, err = db.Exec(`
@@ -19,9 +19,7 @@ func createTargetTableIfNotExists() error {
 
 func createSubsTableIfNotExists() error {
 	db, err := openDatabase()
-	if err != nil {
-		return err
-	}
+	localUtils.CheckError(err)
 	defer db.Close()
 
 	_, err = db.Exec(`
@@ -36,14 +34,11 @@ func createSubsTableIfNotExists() error {
 
 func createUrlsTableIfNotExist() error {
 	db, err := openDatabase()
-	if err != nil {
-		return err
-	}
+	localUtils.CheckError(err)
 	defer db.Close()
 
 	_, err = db.Exec(`
         CREATE TABLE IF NOT EXISTS urls (
-            domain TEXT,
             title TEXT,
             url TEXT PRIMARY KEY,
             host TEXT,

@@ -12,38 +12,24 @@ import (
 
 func SubdomainEnum(url string) error { //*****controller//*****
 	db, err := openDatabase()
-	if err != nil {
-		log.Printf("Error opening database: %v\n", err)
-		return err
-	}
+	localUtils.CheckError(err)
 	defer db.Close()
 
 	err = createSubsTableIfNotExists()
-	if err != nil {
-		log.Errorf("Error creating subdomain table: %v\n", err)
-		return err
-	}
+	localUtils.CheckError(err)
 
 	prev, err := GetSubsFromTable(url)
-	if err != nil {
-		log.Errorf("Error getting subdomains from table: %v\n", err)
-		return err
-	}
+	localUtils.CheckError(err)
 
 	now, err := subdomain.Subdomain(url)
-	if err != nil {
-		log.Errorf("Error getting subdomains: %v\n", err)
-		return err
-	}
-	log.Infof("Previous subdomains: %v\n", prev)
+	localUtils.CheckError(err)
+
+	localUtils.Logger(fmt.Sprintf("Previous subdomains: %v\n", prev), 3)
 	insertElement := localUtils.ElementsOnlyInNow(prev, now)
-	log.Infof("New subdomains: %v\n", insertElement)
+	localUtils.Logger(fmt.Sprintf("New subdomains: %v\n", insertElement), 3)
 	notifier.ClassifyNotification(insertElement)
 	tx, err := db.Begin()
-	if err != nil {
-		log.Errorf("Error beginning transaction: %v\n", err)
-		return err
-	}
+	localUtils.CheckError(err)
 
 	for _, subd := range insertElement {
 		err = AddSubs(db, subd, url)
@@ -55,10 +41,7 @@ func SubdomainEnum(url string) error { //*****controller//*****
 	}
 
 	err = tx.Commit()
-	if err != nil {
-		return err
-	}
-
+	localUtils.CheckError(err)
 	for _, x := range insertElement {
 		fmt.Println(x)
 	}
@@ -67,23 +50,15 @@ func SubdomainEnum(url string) error { //*****controller//*****
 
 func GetSubsFromTable(domain string) ([]string, error) {
 	db, err := openDatabase()
-	if err != nil {
-		log.Printf("Error opening database: %v\n", err)
-		return nil, err
-	}
+	localUtils.CheckError(err)
 	defer db.Close()
 
 	selectStmt, err := db.Prepare("SELECT subdomain FROM subdomain WHERE domain = ?")
-	if err != nil {
-		log.Printf("Error preparing select statement: %v\n", err)
-		return nil, err
-	}
+	localUtils.CheckError(err)
 	defer selectStmt.Close()
 
 	rows, err := selectStmt.Query(domain)
-	if err != nil {
-		return nil, err
-	}
+	localUtils.CheckError(err)
 	defer rows.Close()
 
 	var urls []string

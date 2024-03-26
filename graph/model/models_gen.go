@@ -2,6 +2,19 @@
 
 package model
 
+type Information struct {
+	Title      string `json:"title"`
+	URL        string `json:"url"`
+	Host       string `json:"host"`
+	StatusCode string `json:"status_code"`
+	Scheme     string `json:"scheme"`
+	A          string `json:"a"`
+	Cname      string `json:"cname"`
+	Tech       string `json:"tech"`
+	IP         string `json:"ip"`
+	Port       string `json:"port"`
+}
+
 type Mutation struct {
 }
 
