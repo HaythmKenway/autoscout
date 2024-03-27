@@ -52,7 +52,7 @@ func GetSubsFromTable(domain string) ([]string, error) {
 	db, err := openDatabase()
 	localUtils.CheckError(err)
 	defer db.Close()
-
+	createSubsTableIfNotExists()
 	selectStmt, err := db.Prepare("SELECT subdomain FROM subdomain WHERE domain = ?")
 	localUtils.CheckError(err)
 	defer selectStmt.Close()
