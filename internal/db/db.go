@@ -41,6 +41,28 @@ func Deamon() {
 	}
 }
 
+func CheckTables() {
+	db, err := openDatabase()
+	if err != nil {
+		localUtils.CheckError(err)
+		return
+	}
+	defer db.Close()
+
+	if err := createTargetTableIfNotExists(); err != nil {
+		localUtils.CheckError(err)
+		return
+	}
+	if err := createSubsTableIfNotExists(); err != nil {
+		localUtils.CheckError(err)
+		return
+	}
+	if err := createUrlsTableIfNotExist(); err != nil {
+		localUtils.CheckError(err)
+		return
+	}
+
+}
 func openDatabase() (*sql.DB, error) {
 	return sql.Open("sqlite3", DatabaseFile)
 }

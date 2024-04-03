@@ -6,7 +6,9 @@ package graph
 
 import (
 	"context"
+	"fmt"
 
+	"github.com/HaythmKenway/autoscout/pkg/httpx"
 	"github.com/HaythmKenway/autoscout/graph/model"
 	"github.com/HaythmKenway/autoscout/internal/db"
 	"github.com/HaythmKenway/autoscout/pkg/localUtils"
@@ -86,6 +88,14 @@ func (r *queryResolver) RunScan(ctx context.Context, target string) ([]*model.Ta
 // GetData is the resolver for the getData field.
 func (r *queryResolver) GetData(ctx context.Context, target string) ([]*model.Information, error) {
 	data, err := db.GetDataFromTable(target)
+	
+	if(err!=nil && err.Error() == "target not found") {
+		httpx.Httpx(target)
+		data, err = db.GetDataFromTable(target)
+		if err != nil {
+			return nil, fmt.Errorf("No Data found")
+		}
+	}
 	localUtils.CheckError(err)
 	if err != nil {
 		return nil, err

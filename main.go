@@ -9,6 +9,7 @@ import (
 	"github.com/HaythmKenway/autoscout/pkg/httpx"
 	"github.com/HaythmKenway/autoscout/pkg/localUtils"
 	"github.com/HaythmKenway/autoscout/server"
+	"github.com/HaythmKenway/autoscout/internal/controller"
 )
 
 func main() {
@@ -28,6 +29,7 @@ func main() {
 		db.AddTarget(*tgt)
 	}
 	if *servermode {
+		controller.Init()
 		server.Server()
 	}
 	if *deamon {

@@ -4,7 +4,7 @@ import (
 	URL "net/url"
 )
 
-func AddTarget(url string) (string, error) { //*****controller//*****
+func AddTarget(url string) (string, error) { 
 	u, err := URL.ParseRequestURI("http://" + url)
 	url = u.Hostname()
 	if err != nil {

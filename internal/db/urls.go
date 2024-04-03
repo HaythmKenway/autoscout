@@ -17,7 +17,7 @@ func AddUrl(title string, url string, host string, scheme string, a string, cnam
 		localUtils.Logger(fmt.Sprintf("Error creating table: %v\n", err), 2)
 		return
 	}
-	stmt, err := db.Prepare("INSERT INTO urls(title,url,host,scheme,a,cname,tech,ip,port,status_code) values(?,?,?,?,?,?,?,?,?,?)")
+	stmt, err := db.Prepare("INSERT INTO urls(title,url,host,scheme,a,cname,tech,ip,port,status_code) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT (url) DO UPDATE SET title=excluded.title, host=excluded.host, scheme=excluded.scheme, a=excluded.a, cname=excluded.cname, tech=excluded.tech, ip=excluded.ip, port=excluded.port, status_code=excluded.status_code")
 	if err != nil {
 		localUtils.Logger(fmt.Sprintf("Error preparing statement: %v\n", err), 2)
 		return
@@ -38,8 +38,12 @@ func GetDataFromTable(Tgturl string) ([]string, error) {
 	localUtils.CheckError(err)
 	defer db.Close()
 
-	rows, err := db.Query("SELECT * FROM urls WHERE url = ?", Tgturl)
+	rows, err := db.Query("SELECT * FROM urls WHERE url LIKE ?", "%"+Tgturl+"%")
 	localUtils.CheckError(err)
+	if err != nil {
+		return nil, err
+	}
+
 	defer rows.Close()
 
 	var title string
@@ -58,12 +62,10 @@ func GetDataFromTable(Tgturl string) ([]string, error) {
 		err = rows.Scan(&title, &url, &host, &scheme, &a, &cname, &tech, &ip, &port, &status_code, &lastModified)
 		localUtils.CheckError(err)
 	}
-
+	localUtils.CheckError(err)
 	if url == "" {
 		return nil, fmt.Errorf("target not found")
 	}
 	var res = []string{title, url, host, scheme, a, cname, tech, ip, port, status_code}
-	fmt.Println("hello")
-	fmt.Print(res)
 	return res, err
 }
