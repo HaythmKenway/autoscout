@@ -34,6 +34,6 @@ func Subdomain(domain string) ([]string, error) {
 
 	subdomains := localUtils.ParseSubdomains(output.String())
 	sort.Strings(subdomains)
-
+	localUtils.Logger("subdomain Enumeration for "+domain+" completed", 1)
 	return subdomains, nil
 }

@@ -49,6 +49,7 @@ func SubdomainEnum(url string) error { //*****controller//*****
 }
 
 func GetSubsFromTable(domain string) ([]string, error) {
+	localUtils.Logger(fmt.Sprintf("Getting subdomains for domain: %v\n", domain), 1)
 	db, err := openDatabase()
 	localUtils.CheckError(err)
 	defer db.Close()

@@ -33,7 +33,7 @@ func assertInterfaces(v interface{}) string {
 }
 
 func Httpx(domain string) {
-	localUtils.Logger("started httpx", 1)
+	localUtils.Logger("Running httpx on " + domain,1)
 	cmd := exec.Command("httpx", "-u", domain, "-title", "-x", "get", "-status-code", "-ip", "-json", "-fr")
 	stdout, err := cmd.Output()
 	localUtils.CheckError(err)
@@ -54,4 +54,5 @@ func Httpx(domain string) {
 	ip := assertInterfaces(result["ip"])
 
 	db.AddUrl(title, url, host, scheme, a, cname, tech, ip, port, statusCode)
+	localUtils.Logger("httpx on " + domain + "is done",1)
 }

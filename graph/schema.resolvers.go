@@ -72,6 +72,7 @@ func (r *queryResolver) SubDomain(ctx context.Context, target string) ([]*model.
 
 // RunScan is the resolver for the runScan field.
 func (r *queryResolver) RunScan(ctx context.Context, target string) ([]*model.Target, error) {
+	db.SubdomainEnum(target)
 	subDomains, err := db.GetSubsFromTable(target)
 	if err != nil {
 		return nil, err
