@@ -82,3 +82,14 @@ func Logger(str string, sc int) {
 		log.Debug(str)
 	}
 }
+func RemoveDuplicates(arr []string) []string {
+	uniqueMap := make(map[string]struct{})
+	for _, elem := range arr {
+		uniqueMap[elem] = struct{}{}
+	}
+	unique := make([]string, 0, len(uniqueMap))
+	for key := range uniqueMap {
+		unique = append(unique, key)
+	}
+	return unique
+}

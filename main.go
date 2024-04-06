@@ -18,9 +18,14 @@ func main() {
 	deamon := flag.Bool("d", false, "Run Autoscout in deamon mode")
 	cleardb := flag.Bool("reset", false, "Clear All database")
 	htt := flag.String("httpx", "", "Run httpx")
+	spi := flag.String("spider", "", "Run spider")
+	controller.Init()
 	flag.Parse()
 	if *cleardb {
 		db.ClearDB()
+	}
+	if *spi != "" {
+		controller.Spider(*spi)
 	}
 	if *htt != "" {
 		httpx.Httpx(*htt)
@@ -29,7 +34,6 @@ func main() {
 		db.AddTarget(*tgt)
 	}
 	if *servermode {
-		controller.Init()
 		server.Server()
 	}
 	if *deamon {

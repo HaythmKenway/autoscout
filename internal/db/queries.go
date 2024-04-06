@@ -52,5 +52,19 @@ func createUrlsTableIfNotExist() error {
             lastModified DATE DEFAULT CURRENT_TIMESTAMP
         )
     `)
+	return err}
+
+func createSpiderTableIfNotExist() error {
+	db, err := openDatabase()
+	localUtils.CheckError(err)
+	defer db.Close()
+
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS spider (
+			domain TEXT,
+			url TEXT PRIMARY KEY,
+			lastModified DATE DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
 	return err
 }

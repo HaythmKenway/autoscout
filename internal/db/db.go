@@ -61,7 +61,10 @@ func CheckTables() {
 		localUtils.CheckError(err)
 		return
 	}
-
+	if err := createSpiderTableIfNotExist(); err != nil {
+		localUtils.CheckError(err)
+		return
+	}
 }
 func openDatabase() (*sql.DB, error) {
 	return sql.Open("sqlite3", DatabaseFile)
