@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/HaythmKenway/autoscout/internal/controller"
 	"github.com/HaythmKenway/autoscout/internal/db"
+	gui_module "github.com/HaythmKenway/autoscout/pkg/gui"
 	"github.com/HaythmKenway/autoscout/pkg/httpx"
 	"github.com/HaythmKenway/autoscout/pkg/localUtils"
 	"github.com/HaythmKenway/autoscout/server"
-	"github.com/HaythmKenway/autoscout/internal/controller"
 )
 
 func main() {
@@ -19,8 +20,9 @@ func main() {
 	cleardb := flag.Bool("reset", false, "Clear All database")
 	htt := flag.String("httpx", "", "Run httpx")
 	spi := flag.String("spider", "", "Run spider")
-	controller.Init()
+	gui := flag.Bool("g", true, "Start GUI")
 	flag.Parse()
+	controller.Init()
 	if *cleardb {
 		db.ClearDB()
 	}
@@ -32,6 +34,10 @@ func main() {
 	}
 	if *tgt != "" {
 		db.AddTarget(*tgt)
+	}
+	if *gui {
+		gui_module.LoadGui()
+		localUtils.Logger("hello", 1)
 	}
 	if *servermode {
 		server.Server()
