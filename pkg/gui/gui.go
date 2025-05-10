@@ -10,19 +10,19 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	zone "github.com/lrstanley/bubblezone"
-	charm "github.com/HaythmKenway/autoscout/pkg/gui/settings"
 )
 
 type model struct {
-	Tabs       []string
-	TabContent []string
-	activeTab  int
-	width      int
-	height     int
+	Tabs          []string
+	activeTab     int
+	width         int
+	height        int
+	settingsModel settingsModel
 }
 
 func (m model) Init() tea.Cmd {
-	return nil
+		return m.settingsModel.Init()
+
 }
 
 func getTerminalSize() (width int, height int) {
@@ -34,40 +34,43 @@ func getTerminalSize() (width int, height int) {
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		updatedModel, settingsCmd := m.settingsModel.Update(msg)
+		m.settingsModel = updatedModel
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
-		case "right", "l", "n", "tab":
+		case "right", "l", "n" :
 			m.activeTab = min(m.activeTab+1, len(m.Tabs)-1)
-		case "left", "h", "p", "shift+tab":
+		case "left", "h", "p":
 			m.activeTab = max(m.activeTab-1, 0)
 		}
+		cmd = tea.Batch(cmd, settingsCmd)
+
 	case tea.MouseMsg:
 		if msg.Action != tea.MouseActionRelease || msg.Button != tea.MouseButtonLeft {
 			return m, nil
 		}
 		for i := range m.Tabs {
-			zoneID := fmt.Sprintf("tab-%d", i)
-			if zone.Get(zoneID).InBounds(msg) {
+			if zone.Get(fmt.Sprintf("tab-%d", i)).InBounds(msg) {
 				m.activeTab = i
 				break
 			}
 		}
+		//  And also update on mouse events (might be needed for edge cases)
+		updatedModel, settingsCmd := m.settingsModel.Update(msg)
+		m.settingsModel = updatedModel
+		cmd = tea.Batch(cmd, settingsCmd)
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
 	}
-	return m, nil
-}
 
-func tabBorderWithBottom(left, middle, right string) lipgloss.Border {
-	border := lipgloss.RoundedBorder()
-	border.BottomLeft = left
-	border.Bottom = middle
-	border.BottomRight = right
-	return border
+	return m, cmd
 }
 
 var (
@@ -83,11 +86,17 @@ var (
 				BorderForeground(highlightColor).
 				Padding(0, 1)
 
-	windowStyle = lipgloss.NewStyle().
-				Padding(1, 2)
-
-	docStyle = lipgloss.NewStyle().PaddingTop(1)
+	windowStyle = lipgloss.NewStyle().Padding(1, 2)
+	docStyle    = lipgloss.NewStyle().PaddingTop(1)
 )
+
+func tabBorderWithBottom(left, middle, right string) lipgloss.Border {
+	border := lipgloss.RoundedBorder()
+	border.BottomLeft = left
+	border.Bottom = middle
+	border.BottomRight = right
+	return border
+}
 
 func (m model) View() string {
 	var renderedTabs []string
@@ -98,8 +107,7 @@ func (m model) View() string {
 		if i == m.activeTab {
 			style = activeTabStyle
 		}
-		zoneID := fmt.Sprintf("tab-%d", i)
-		tabStr := zone.Mark(zoneID, style.Render(tab))
+		tabStr := zone.Mark(fmt.Sprintf("tab-%d", i), style.Render(tab))
 		renderedTabs = append(renderedTabs, tabStr)
 		tabRowWidth += lipgloss.Width(tabStr)
 	}
@@ -112,7 +120,6 @@ func (m model) View() string {
 			Render(strings.Repeat("─", m.width-tabRowWidth))
 	}
 
-	// Handle rendering of content based on active tab
 	content := ""
 	switch m.activeTab {
 	case 0:
@@ -122,9 +129,7 @@ func (m model) View() string {
 	case 2:
 		content = "This will be Analyzing page"
 	case 3:
-		// Settings Tab (Using charm settings page here)
-		settingsModel := charm.New()
-		content = settingsModel.View() // Show settings page content
+		content = m.settingsModel.View()
 	}
 
 	contentView := windowStyle.Width(m.width).Render(content)
@@ -135,7 +140,6 @@ func (m model) View() string {
 func LoadGui() error {
 	w, h := getTerminalSize()
 	zone.NewGlobal()
-
 	m := model{
 		Tabs: []string{
 			"⌂ Dashboard",
@@ -143,20 +147,13 @@ func LoadGui() error {
 			"≡ Analysis",
 			"☰ Settings",
 		},
-		TabContent: []string{
-			"This will be dashboard someday",
-			"This will be Target page in future",
-			"This will be Analyzing page",
-			"This will be settings page", // Placeholder for settings tab
-		},
-		width:  w,
-		height: h,
+		width:         w,
+		height:        h,
+		settingsModel: NewSettingsModel(w),
 	}
+	m.settingsModel.Init()
 
-	p := tea.NewProgram(m,
-		tea.WithAltScreen(),
-		tea.WithMouseCellMotion(),
-	)
+	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("running program: %w", err)
@@ -177,4 +174,3 @@ func min(a, b int) int {
 	}
 	return b
 }
-
