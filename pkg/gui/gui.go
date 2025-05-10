@@ -7,9 +7,9 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/charmbracelet/ssh"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/ssh"
 	zone "github.com/lrstanley/bubblezone"
 )
 
@@ -22,7 +22,7 @@ type model struct {
 }
 
 func (m model) Init() tea.Cmd {
-		return m.settingsModel.Init()
+	return m.settingsModel.Init()
 
 }
 
@@ -34,9 +34,6 @@ func getTerminalSize() (width int, height int) {
 	return width, height
 }
 
-
-
-
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
@@ -45,11 +42,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		updatedModel, settingsCmd := m.settingsModel.Update(msg)
 		m.settingsModel = updatedModel
 		switch msg.String() {
-		case "ctrl+c", "q":
+		case "ctrl+c":
 			return m, tea.Quit
-		case "right", "l", "n" :
+		case "right":
 			m.activeTab = min(m.activeTab+1, len(m.Tabs)-1)
-		case "left", "h", "p":
+		case "left":
 			m.activeTab = max(m.activeTab-1, 0)
 		}
 		cmd = tea.Batch(cmd, settingsCmd)
@@ -86,9 +83,9 @@ var (
 				Padding(0, 1)
 
 	activeTabStyle = lipgloss.NewStyle().
-				Border(tabBorderWithBottom("┘", " ", "└"), true).
-				BorderForeground(highlightColor).
-				Padding(0, 1)
+			Border(tabBorderWithBottom("┘", " ", "└"), true).
+			BorderForeground(highlightColor).
+			Padding(0, 1)
 
 	windowStyle = lipgloss.NewStyle().Padding(1, 2)
 	docStyle    = lipgloss.NewStyle().PaddingTop(1)
@@ -153,7 +150,7 @@ func LoadGui() error {
 		},
 		width:         w,
 		height:        h,
-		settingsModel: NewSettingsModel(w),
+		settingsModel: NewSettingsModel(w, h),
 	}
 	m.settingsModel.Init()
 
@@ -165,8 +162,8 @@ func LoadGui() error {
 	return nil
 }
 
-func SShHandler(s ssh.Session) (tea.Model,[]tea.ProgramOption){
-	w, h :=getTerminalSize()
+func SShHandler(s ssh.Session) (tea.Model, []tea.ProgramOption) {
+	w, h := getTerminalSize()
 	zone.NewGlobal()
 	m := model{
 		Tabs: []string{
@@ -177,9 +174,9 @@ func SShHandler(s ssh.Session) (tea.Model,[]tea.ProgramOption){
 		},
 		width:         w,
 		height:        h,
-		settingsModel: NewSettingsModel(w),
+		settingsModel: NewSettingsModel(w, h),
 	}
-	return m,[]tea.ProgramOption{tea.WithAltScreen(),tea.WithMouseCellMotion()}
+	return m, []tea.ProgramOption{tea.WithAltScreen(), tea.WithMouseCellMotion()}
 }
 
 func max(a, b int) int {

@@ -6,7 +6,7 @@
 # Ignore build directories
 _build/
 bin/
-
+.ssh/
 # Ignore log files
 *.log
 
