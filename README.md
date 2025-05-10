@@ -13,9 +13,9 @@ The project consists of Automating all the popular bug bounty hunting tool into 
 Currently I have planned 3 modes of operation for the application
 
 Deamon mode                  ->  performs the programmed scans on specified intervals
-Server mode                  ->  Opens a Graphql Server which can be accessed by using [Autoscout-web-client](https://github.com/HaythmKenway/autoscout-client) 
+Server mode(depricated)       ->  Opens a Graphql Server which can be accessed by using [Autoscout-web-client](https://github.com/HaythmKenway/autoscout-client) 
 Command line operation mode  -> Use `autoscout -h` to view all commands  
-
+SSh Connection               -> By default the ssh server runs at  @ 0.0.0.0:2222
 ### Project Milestone
 - [x] Subdomain Enumeration
 - [x] Notifying New targets to discord server

@@ -7,6 +7,7 @@ import (
 
 	"golang.org/x/term"
 
+	"github.com/charmbracelet/ssh"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	zone "github.com/lrstanley/bubblezone"
@@ -32,6 +33,9 @@ func getTerminalSize() (width int, height int) {
 	}
 	return width, height
 }
+
+
+
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
@@ -159,6 +163,23 @@ func LoadGui() error {
 		return fmt.Errorf("running program: %w", err)
 	}
 	return nil
+}
+
+func SShHandler(s ssh.Session) (tea.Model,[]tea.ProgramOption){
+	w, h :=getTerminalSize()
+	zone.NewGlobal()
+	m := model{
+		Tabs: []string{
+			"⌂ Dashboard",
+			"➤ Targets",
+			"≡ Analysis",
+			"☰ Settings",
+		},
+		width:         w,
+		height:        h,
+		settingsModel: NewSettingsModel(w),
+	}
+	return m,[]tea.ProgramOption{tea.WithAltScreen(),tea.WithMouseCellMotion()}
 }
 
 func max(a, b int) int {
