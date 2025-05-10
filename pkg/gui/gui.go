@@ -2,201 +2,179 @@ package gui
 
 import (
 	"fmt"
-	// "os"
+	"os"
 	"strings"
 
-	// "github.com/HaythmKenway/autoscout/pkg/localUtils"
+	"golang.org/x/term"
+
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	// "github.com/lucasb-eyer/go-colorful"
-	"github.com/muesli/gamut"
-	// "golang.org/x/term"
+	zone "github.com/lrstanley/bubblezone"
+	charm "github.com/HaythmKenway/autoscout/pkg/gui/settings"
 )
 
-const (
-	width=96
-	columnWidth=30)
+type model struct {
+	Tabs       []string
+	TabContent []string
+	activeTab  int
+	width      int
+	height     int
+}
+
+func (m model) Init() tea.Cmd {
+	return nil
+}
+
+func getTerminalSize() (width int, height int) {
+	width, height, err := term.GetSize(int(os.Stdout.Fd()))
+	if err != nil {
+		return 80, 24
+	}
+	return width, height
+}
+
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c", "q":
+			return m, tea.Quit
+		case "right", "l", "n", "tab":
+			m.activeTab = min(m.activeTab+1, len(m.Tabs)-1)
+		case "left", "h", "p", "shift+tab":
+			m.activeTab = max(m.activeTab-1, 0)
+		}
+	case tea.MouseMsg:
+		if msg.Action != tea.MouseActionRelease || msg.Button != tea.MouseButtonLeft {
+			return m, nil
+		}
+		for i := range m.Tabs {
+			zoneID := fmt.Sprintf("tab-%d", i)
+			if zone.Get(zoneID).InBounds(msg) {
+				m.activeTab = i
+				break
+			}
+		}
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+	}
+	return m, nil
+}
+
+func tabBorderWithBottom(left, middle, right string) lipgloss.Border {
+	border := lipgloss.RoundedBorder()
+	border.BottomLeft = left
+	border.Bottom = middle
+	border.BottomRight = right
+	return border
+}
 
 var (
+	highlightColor = lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#7D56F4"}
 
-	// General.
+	inactiveTabStyle = lipgloss.NewStyle().
+				Border(tabBorderWithBottom("┴", "─", "┴"), true).
+				BorderForeground(highlightColor).
+				Padding(0, 1)
 
-	normal    = lipgloss.Color("#EEEEEE")
-	subtle    = lipgloss.AdaptiveColor{Light: "#D9DCCF", Dark: "#383838"}
-	highlight = lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#7D56F4"}
-	special   = lipgloss.AdaptiveColor{Light: "#43BF6D", Dark: "#73F59F"}
-	blends    = gamut.Blends(lipgloss.Color("#F25D94"), lipgloss.Color("#EDFF82"), 50)
+	activeTabStyle = lipgloss.NewStyle().
+				Border(tabBorderWithBottom("┘", " ", "└"), true).
+				BorderForeground(highlightColor).
+				Padding(0, 1)
 
-	base = lipgloss.NewStyle().Foreground(normal)
+	windowStyle = lipgloss.NewStyle().
+				Padding(1, 2)
 
-	divider = lipgloss.NewStyle().
-		SetString("•").
-		Padding(0, 1).
-		Foreground(subtle).
-		String()
-
-	url = lipgloss.NewStyle().Foreground(special).Render
-
-	// Tabs.
-
-	activeTabBorder = lipgloss.Border{
-		Top:         "─",
-		Bottom:      " ",
-		Left:        "│",
-		Right:       "│",
-		TopLeft:     "╭",
-		TopRight:    "╮",
-		BottomLeft:  "┘",
-		BottomRight: "└",
-	}
-
-	tabBorder = lipgloss.Border{
-		Top:         "─",
-		Bottom:      "─",
-		Left:        "│",
-		Right:       "│",
-		TopLeft:     "╭",
-		TopRight:    "╮",
-		BottomLeft:  "┴",
-		BottomRight: "┴",
-	}
-
-	tab = lipgloss.NewStyle().
-		Border(tabBorder, true).
-		BorderForeground(highlight).
-		Padding(0, 1)
-
-	activeTab = tab.Border(activeTabBorder, true)
-
-	tabGap = tab.
-		BorderTop(false).
-		BorderLeft(false).
-		BorderRight(false)
-
-	// Title.
-
-	titleStyle = lipgloss.NewStyle().
-			MarginLeft(1).
-			MarginRight(5).
-			Padding(0, 1).
-			Italic(true).
-			Foreground(lipgloss.Color("#FFF7DB")).
-			SetString("Lip Gloss")
-
-	descStyle = base.MarginTop(1)
-
-	infoStyle = base.
-			BorderStyle(lipgloss.NormalBorder()).
-			BorderTop(true).
-			BorderForeground(subtle)
-
-	// Dialog.
-
-	dialogBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#874BFD")).
-			Padding(1, 0).
-			BorderTop(true).
-			BorderLeft(true).
-			BorderRight(true).
-			BorderBottom(true)
-
-	buttonStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FFF7DB")).
-			Background(lipgloss.Color("#888B7E")).
-			Padding(0, 3).
-			MarginTop(1)
-
-	activeButtonStyle = buttonStyle.
-				Foreground(lipgloss.Color("#FFF7DB")).
-				Background(lipgloss.Color("#F25D94")).
-				MarginRight(2).
-				Underline(true)
-
-	// List.
-
-	list = lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder(), false, true, false, false).
-		BorderForeground(subtle).
-		MarginRight(2).
-		Height(8).
-		Width(columnWidth + 1)
-
-	listHeader = base.
-			BorderStyle(lipgloss.NormalBorder()).
-			BorderBottom(true).
-			BorderForeground(subtle).
-			MarginRight(2).
-			Render
-
-	listItem = base.PaddingLeft(2).Render
-
-	checkMark = lipgloss.NewStyle().SetString("✓").
-			Foreground(special).
-			PaddingRight(1).
-			String()
-
-	listDone = func(s string) string {
-		return checkMark + lipgloss.NewStyle().
-			Strikethrough(true).
-			Foreground(lipgloss.AdaptiveColor{Light: "#969B86", Dark: "#696969"}).
-			Render(s)
-	}
-
-	// Paragraphs/History.
-
-	historyStyle = lipgloss.NewStyle().
-			Align(lipgloss.Left).
-			Foreground(lipgloss.Color("#FAFAFA")).
-			Background(highlight).
-			Margin(1, 3, 0, 0).
-			Padding(1, 2).
-			Height(19).
-			Width(columnWidth)
-
-	// Status Bar.
-
-	statusNugget = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FFFDF5")).
-			Padding(0, 1)
-
-	statusBarStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.AdaptiveColor{Light: "#343433", Dark: "#C1C6B2"}).
-			Background(lipgloss.AdaptiveColor{Light: "#D9DCCF", Dark: "#353533"})
-
-	statusStyle = lipgloss.NewStyle().
-			Inherit(statusBarStyle).
-			Foreground(lipgloss.Color("#FFFDF5")).
-			Background(lipgloss.Color("#FF5F87")).
-			Padding(0, 1).
-			MarginRight(1)
-
-	encodingStyle = statusNugget.
-			Background(lipgloss.Color("#A550DF")).
-			Align(lipgloss.Right)
-
-	statusText = lipgloss.NewStyle().Inherit(statusBarStyle)
-
-	fishCakeStyle = statusNugget.Background(lipgloss.Color("#6124DF"))
-
-	// Page.
-
-	docStyle = lipgloss.NewStyle().Padding(1, 2, 1, 2)
+	docStyle = lipgloss.NewStyle().PaddingTop(1)
 )
 
-func LoadGui(){
-	// physicalWidth, _,a:= term.GetSize(int(os.Stdout.Fd()))
-	doc := strings.Builder{}
+func (m model) View() string {
+	var renderedTabs []string
+	tabRowWidth := 0
 
-	{
-		row:= lipgloss.JoinHorizontal(
-			lipgloss.Top,activeTab.Render("Add_Target"),
-			tab.Render("Dashboard"),
-			tab.Render("Scheduler"),
-		)
-		gap := tabGap.Render(strings.Repeat(" ", max(0, width-lipgloss.Width(row)-2)))
-		row = lipgloss.JoinHorizontal(lipgloss.Bottom, row, gap)
-		doc.WriteString(row + "\n\n")
+	for i, tab := range m.Tabs {
+		style := inactiveTabStyle
+		if i == m.activeTab {
+			style = activeTabStyle
+		}
+		zoneID := fmt.Sprintf("tab-%d", i)
+		tabStr := zone.Mark(zoneID, style.Render(tab))
+		renderedTabs = append(renderedTabs, tabStr)
+		tabRowWidth += lipgloss.Width(tabStr)
 	}
-		fmt.Println(docStyle.Render(doc.String()))
 
+	row := lipgloss.JoinHorizontal(lipgloss.Top, renderedTabs...)
+
+	if tabRowWidth < m.width {
+		row += lipgloss.NewStyle().
+			Foreground(highlightColor).
+			Render(strings.Repeat("─", m.width-tabRowWidth))
+	}
+
+	// Handle rendering of content based on active tab
+	content := ""
+	switch m.activeTab {
+	case 0:
+		content = "This will be dashboard someday"
+	case 1:
+		content = "This will be Target page in future"
+	case 2:
+		content = "This will be Analyzing page"
+	case 3:
+		// Settings Tab (Using charm settings page here)
+		settingsModel := charm.New()
+		content = settingsModel.View() // Show settings page content
+	}
+
+	contentView := windowStyle.Width(m.width).Render(content)
+
+	return zone.Scan(docStyle.Render(row + "\n" + contentView))
 }
+
+func LoadGui() error {
+	w, h := getTerminalSize()
+	zone.NewGlobal()
+
+	m := model{
+		Tabs: []string{
+			"⌂ Dashboard",
+			"➤ Targets",
+			"≡ Analysis",
+			"☰ Settings",
+		},
+		TabContent: []string{
+			"This will be dashboard someday",
+			"This will be Target page in future",
+			"This will be Analyzing page",
+			"This will be settings page", // Placeholder for settings tab
+		},
+		width:  w,
+		height: h,
+	}
+
+	p := tea.NewProgram(m,
+		tea.WithAltScreen(),
+		tea.WithMouseCellMotion(),
+	)
+
+	if _, err := p.Run(); err != nil {
+		return fmt.Errorf("running program: %w", err)
+	}
+	return nil
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
