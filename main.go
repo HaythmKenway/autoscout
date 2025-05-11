@@ -21,7 +21,6 @@ import (
 	"github.com/charmbracelet/wish"
 	"github.com/charmbracelet/wish/activeterm"
 	"github.com/charmbracelet/wish/bubbletea"
-	// "github.com/charmbracelet/log"
 
 )
 
@@ -86,7 +85,8 @@ func sshdeeznuts() {
 		),
 	)
 	if err != nil {
-		localUtils.Logger(fmt.Sprintf("Could not start server", "error", err),2)
+localUtils.Logger(fmt.Sprintf("Could not start server: %v", err), 2)
+
 	}
 
 	done := make(chan os.Signal, 1)
@@ -102,7 +102,8 @@ func sshdeeznuts() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := s.Shutdown(ctx); err != nil && !errors.Is(err, ssh.ErrServerClosed) {
-				localUtils.Logger(fmt.Sprintf("Could not stop server", "error", err),1)
+localUtils.Logger(fmt.Sprintf("Could not stop server: %v", err), 1)
+
 	}
 }
 func StartUp() {

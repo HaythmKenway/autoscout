@@ -19,11 +19,16 @@ type model struct {
 	width         int
 	height        int
 	settingsModel settingsModel
+	dashboardModel dashboardModel
 }
 
 func (m model) Init() tea.Cmd {
-	return m.settingsModel.Init()
-
+	if m.activeTab==0{
+		return m.dashboardModel.Init()}
+	if m.activeTab==3{
+		return m.settingsModel.Init()}
+	
+return nil
 }
 
 func getTerminalSize() (width int, height int) {
@@ -61,11 +66,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				break
 			}
 		}
-		//  And also update on mouse events (might be needed for edge cases)
+		if(m.activeTab==0){
+		updatedDashboardModel,dashboardcmd :=m.dashboardModel.Update(msg)
+		m.dashboardModel = updatedDashboardModel
+		cmd =tea.Batch(cmd,dashboardcmd)	
+	}
+		if(m.activeTab==3){
 		updatedModel, settingsCmd := m.settingsModel.Update(msg)
 		m.settingsModel = updatedModel
 		cmd = tea.Batch(cmd, settingsCmd)
-
+	}
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -124,7 +134,7 @@ func (m model) View() string {
 	content := ""
 	switch m.activeTab {
 	case 0:
-		content = "This will be dashboard someday"
+		content =m.dashboardModel.View() 
 	case 1:
 		content = "This will be Target page in future"
 	case 2:
@@ -151,6 +161,7 @@ func LoadGui() error {
 		width:         w,
 		height:        h,
 		settingsModel: NewSettingsModel(w, h),
+		dashboardModel: NewDashboardModel(w,h),
 	}
 	m.settingsModel.Init()
 
