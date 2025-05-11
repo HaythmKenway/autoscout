@@ -134,7 +134,7 @@ func (m model) View() string {
 	content := ""
 	switch m.activeTab {
 	case 0:
-		content =m.dashboardModel.View() 
+		content = m.dashboardModel.View() 
 	case 1:
 		content = "This will be Target page in future"
 	case 2:

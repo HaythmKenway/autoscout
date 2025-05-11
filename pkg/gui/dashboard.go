@@ -28,6 +28,7 @@ var (
 
 type dashboardModel struct{
 	dialog dialog
+	app_status bool
 }
 
 type dialog struct{
@@ -55,10 +56,8 @@ func (m dashboardModel) Update(msg tea.Msg) (dashboardModel, tea.Cmd) {
 			return m, nil
 		}
 
-		if zone.Get(m.dialog.id + "confirm").InBounds(msg) {
-			m.dialog.active = "confirm"
-		} else if zone.Get(m.dialog.id + "cancel").InBounds(msg) {
-			m.dialog.active = "cancel"
+		if zone.Get(m.dialog.id + "ToggleStart").InBounds(msg) {
+			m.app_status=!m.app_status	
 		}
 
 		return m, nil
@@ -68,20 +67,17 @@ func (m dashboardModel) Update(msg tea.Msg) (dashboardModel, tea.Cmd) {
 }
 
 func (m dashboardModel) View() string {
-	var okButton, cancelButton string
-	
-	if m.dialog.active == "confirm" {
-		okButton=activeButtonStyle.Render("Start")
-		cancelButton=buttonStyle.Render("Stop")
+	var startButton,question string	
+	if m.app_status {
+		startButton=activeButtonStyle.Render("Stop")
+		question = lipgloss.NewStyle().Width(27).Align(lipgloss.Center).Render("Stop Services")
 	} else {
-		okButton = buttonStyle.Render("Start")
-		cancelButton = activeButtonStyle.Render("Stop")
+		startButton=buttonStyle.Render("Start")
+		question = lipgloss.NewStyle().Width(27).Align(lipgloss.Center).Render("Start Services")
 	}
-		question := lipgloss.NewStyle().Width(27).Align(lipgloss.Center).Render("Start Services")
 	buttons := lipgloss.JoinHorizontal(
 		lipgloss.Top,
-		zone.Mark(m.dialog.id+"confirm", okButton),
-		zone.Mark(m.dialog.id+"cancel", cancelButton),
+			zone.Mark(m.dialog.id+"ToggleStart",startButton),
 	)
 	return dialogBoxStyle.Render(lipgloss.JoinVertical(lipgloss.Center, question, buttons))
 }
