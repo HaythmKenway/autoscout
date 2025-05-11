@@ -25,22 +25,40 @@ type Discord struct {
 	DiscordWebhookURL string `yaml:"discord_webhook_url"`
 }
 
-type Config struct {
+type Settings struct {
+	Agent string `yaml:"agent"`
+	Data  string `yaml:"data"`
+}
+
+
+type DiscordConfig struct {
 	Discord []Discord `yaml:"discord"`
 }
 
+type SettingsConfig struct {
+	Settings Settings `yaml:"settings"`
+}
+
 func NewSettingsModel(width int, height int) settingsModel {
-	filePath := os.ExpandEnv("$HOME/.config/notify/provider-config.yaml")
-	config, err := readConfig(filePath)
-	fmt.Print(config)
+	discordPath := os.ExpandEnv("$HOME/.config/notify/provider-config.yaml")
+	settingsPath := os.ExpandEnv("$HOME/.config/autoscout/user-config.yaml")
+
+	discordConfig, err := readDiscordConfig(discordPath)
 	if err != nil {
-		log.Fatalf("Error reading config: %v", err)
+		log.Fatalf("Error reading discord config: %v", err)
+	}
+
+	settingsConfig, err := readSettingsConfig(settingsPath)
+	if err != nil {
+		settingsConfig = &SettingsConfig{} 
 	}
 
 	discordModel := &Discord{}
-	if len(config.Discord) > 0 {
-		discordModel = &config.Discord[0]
+	if len(discordConfig.Discord) > 0 {
+		discordModel = &discordConfig.Discord[0]
 	}
+
+	settings := settingsConfig.Settings
 
 	form := huh.NewForm(
 		huh.NewGroup(
@@ -48,11 +66,13 @@ func NewSettingsModel(width int, height int) settingsModel {
 				Key("agent").
 				Options(huh.NewOptions("Gemini", "Ollama", "Skibbidi")...).
 				Title("Choose your model").
-				Description("Make sure to go bankrupt"),
+				Description("Make sure to go bankrupt").
+				Value(&settings.Agent),
 			huh.NewSelect[string]().
 				Key("data").
 				Options(huh.NewOptions("yes ofcourse!", "yes")...).
-				Title("Sell your data"),
+				Title("Sell your data").
+				Value(&settings.Data),
 			huh.NewInput().Key("Did").Title("Bot Id").Value(&discordModel.ID),
 			huh.NewInput().Key("Dchannel").Title("Discord channel").Value(&discordModel.DiscordChannel),
 			huh.NewInput().Key("Dame").Title("Discord Username").Value(&discordModel.DiscordUsername),
@@ -107,68 +127,117 @@ func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 			storetodb(m.discordModel, key, valueStr)
 		}
 	}
+
 	return m, formCmd
-}
-
-func storetodb(m *Discord, key string, value string) {
-	switch key {
-	case "Did":
-		m.ID = value
-	case "Dchannel":
-		m.DiscordChannel = value
-	case "Dame":
-		m.DiscordUsername = value
-	case "Dformat":
-		m.DiscordFormat = value
-	case "Dwebhook":
-		m.DiscordWebhookURL = value
-	}
-
-	config := &Config{Discord: []Discord{*m}}
-	err := writeConfig(os.ExpandEnv("$HOME/.config/notify/provider-config.yaml"), config)
-	if err != nil {
-		localUtils.Logger(fmt.Sprintf("Error writing config: %v", err), 1)
-	}
-}
-
-func readConfig(filePath string) (*Config, error) {
-	data, err := ioutil.ReadFile(filePath)
-	if err != nil {
-		return nil, err
-	}
-
-	var config Config
-	err = yaml.Unmarshal(data, &config)
-	if err != nil {
-		return nil, err
-	}
-
-	return &config, nil
-}
-
-func writeConfig(filePath string, config *Config) error {
-	data, err := yaml.Marshal(config)
-	if err != nil {
-		return err
-	}
-
-	err = ioutil.WriteFile(filePath, data, os.ModePerm)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func updateDiscordChannel(config *Config, id string, newChannel string) {
-	for i, d := range config.Discord {
-		if d.ID == id {
-			config.Discord[i].DiscordChannel = newChannel
-			break
-		}
-	}
 }
 
 func (m settingsModel) View() string {
 	return m.form.View()
 }
+
+func storetodb(discord *Discord, key string, value string) {
+	switch key {
+	case "Did", "Dchannel", "Dame", "Dformat", "Dwebhook":
+		updateDiscordConfig(discord, key, value)
+	case "agent", "data":
+		updateSettingsConfig(key, value)
+	}
+}
+func updateDiscordConfig(discord *Discord, key string, value string) {
+	switch key {
+	case "Did":
+		discord.ID = value
+	case "Dchannel":
+		discord.DiscordChannel = value
+	case "Dame":
+		discord.DiscordUsername = value
+	case "Dformat":
+		discord.DiscordFormat = value
+	case "Dwebhook":
+		discord.DiscordWebhookURL = value
+	}
+
+	config := &DiscordConfig{Discord: []Discord{*discord}}
+
+	path := os.ExpandEnv("$HOME/.config/notify/provider-config.yaml")
+	os.DirFS(path)
+	err := os.MkdirAll(os.ExpandEnv("$HOME/.config/notify"), os.ModePerm)
+	if err != nil {
+		localUtils.Logger(fmt.Sprintf("Error creating config directory: %v", err), 1)
+		return
+	}
+
+	if err := writeDiscordConfig(path, config); err != nil {
+		localUtils.Logger(fmt.Sprintf("Error writing Discord config: %v", err), 1)
+	}
+}
+
+func updateSettingsConfig(key string, value string) {
+	filePath := os.ExpandEnv("$HOME/.config/autoscout/user-config.yaml")
+	dirPath := os.ExpandEnv("$HOME/.config/autoscout")
+
+	if err := os.MkdirAll(dirPath, os.ModePerm); err != nil {
+		localUtils.Logger(fmt.Sprintf("Error creating settings directory: %v", err), 1)
+		return
+	}
+
+	config, err := readSettingsConfig(filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			config = &SettingsConfig{}
+		} else {
+			localUtils.Logger(fmt.Sprintf("Error reading Settings config: %v", err), 1)
+			return
+		}
+	}
+
+	switch key {
+	case "agent":
+		config.Settings.Agent = value
+	case "data":
+		config.Settings.Data = value
+	}
+
+	if err := writeSettingsConfig(filePath, config); err != nil {
+		localUtils.Logger(fmt.Sprintf("Error writing Settings config: %v", err), 1)
+	}
+}
+
+
+
+func readDiscordConfig(filePath string) (*DiscordConfig, error) {
+	data, err := ioutil.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+	var config DiscordConfig
+	err = yaml.Unmarshal(data, &config)
+	return &config, err
+}
+
+func readSettingsConfig(filePath string) (*SettingsConfig, error) {
+	data, err := ioutil.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+	var config SettingsConfig
+	err = yaml.Unmarshal(data, &config)
+	return &config, err
+}
+
+func writeDiscordConfig(filePath string, config *DiscordConfig) error {
+	data, err := yaml.Marshal(config)
+	if err != nil {
+		return err
+	}
+	return ioutil.WriteFile(filePath, data, os.ModePerm)
+}
+
+func writeSettingsConfig(filePath string, config *SettingsConfig) error {
+	data, err := yaml.Marshal(config)
+	if err != nil {
+		return err
+	}
+	return ioutil.WriteFile(filePath, data, os.ModePerm)
+}
+

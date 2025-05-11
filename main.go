@@ -39,7 +39,7 @@ func main() {
 	htt := flag.String("httpx", "", "Run httpx")
 	spi := flag.String("spider", "", "Run spider")
 	gui := flag.Bool("g", false, "Start GUI")
-	ssh := flag.Bool("ssh",true,"Start sshserver")
+	ssh := flag.Bool("ssh",false,"Start sshserver")
 	flag.Parse()
 	controller.Init()
 	if *ssh{
