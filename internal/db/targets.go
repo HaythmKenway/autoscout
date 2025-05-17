@@ -1,7 +1,12 @@
 package db
 
 import (
+	"database/sql"
+	"fmt"
 	URL "net/url"
+	"time"
+
+	"github.com/HaythmKenway/autoscout/pkg/localUtils"
 )
 
 func AddTarget(url string) (string, error) { 
@@ -37,22 +42,59 @@ func RemoveTarget(url string) (string, error) {
 	return "Target removed successfully", nil
 }
 
-func GetTargetsFromTable() ([]string, error) {
+func ScanCompleted(target string) {
+	db, err := openDatabase()
+	localUtils.CheckError(err)
+	defer db.Close()
+
+	stmt, err := db.Prepare("UPDATE targets SET lastScanned = $1 WHERE subdomain = $2")
+	localUtils.CheckError(err)
+	defer stmt.Close()
+
+	_, err = stmt.Exec(time.Now(), target)
+	localUtils.CheckError(err)
+}
+
+
+func GetTargetsFromTable(daysOpt ...int) ([]string, error) {
+	days := 0
+	if len(daysOpt) > 0 {
+		days = daysOpt[0]}
+
 	db, err := openDatabase()
 	if err != nil {
 		return nil, err
 	}
 	defer db.Close()
 
-	selectStmt, err := db.Prepare("SELECT subdomain FROM targets")
-	if err != nil {
-		return nil, err
-	}
-	defer selectStmt.Close()
+	var (
+		stmt *sql.Stmt
+		rows *sql.Rows
+	)
 
-	rows, err := selectStmt.Query()
-	if err != nil {
-		return nil, err
+	if days == 0 {
+		stmt, err = db.Prepare("SELECT subdomain FROM targets")
+		if err != nil {
+			return nil, err
+		}
+		defer stmt.Close()
+
+		rows, err = stmt.Query()
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		stmt, err = db.Prepare(`SELECT subdomain FROM targets WHERE lastScanned < $1 OR lastScanned is NULL`)
+		if err != nil {
+			return nil, fmt.Errorf("prepare error: %w", err)
+		}
+		defer stmt.Close()
+
+		cutoff := time.Now().AddDate(0, 0, -days)
+		rows, err = stmt.Query(cutoff)
+		if err != nil {
+			return nil, fmt.Errorf("query error: %w", err)
+		}
 	}
 	defer rows.Close()
 

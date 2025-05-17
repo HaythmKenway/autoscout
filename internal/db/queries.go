@@ -11,8 +11,9 @@ func createTargetTableIfNotExists() error {
 	_, err = db.Exec(`
         CREATE TABLE IF NOT EXISTS targets (
             lastModified DATE DEFAULT CURRENT_TIMESTAMP,
+            lastScanned DATE,
             subdomain TEXT PRIMARY KEY
-        )
+		)
     `)
 	return err
 }

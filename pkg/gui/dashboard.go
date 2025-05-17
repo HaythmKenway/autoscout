@@ -4,6 +4,7 @@ import (
  tea "github.com/charmbracelet/bubbletea"
  	"github.com/charmbracelet/lipgloss"
 	zone "github.com/lrstanley/bubblezone"
+	scheduler "github.com/HaythmKenway/autoscout/internal/scheduler"
 )
 
 var (
@@ -57,7 +58,8 @@ func (m dashboardModel) Update(msg tea.Msg) (dashboardModel, tea.Cmd) {
 		}
 
 		if zone.Get(m.dialog.id + "ToggleStart").InBounds(msg) {
-			m.app_status=!m.app_status	
+			m.app_status=!m.app_status
+			scheduler.Skibbidi(m.app_status)
 		}
 
 		return m, nil
