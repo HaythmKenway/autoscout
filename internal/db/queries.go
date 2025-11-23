@@ -1,14 +1,15 @@
 package db
 
-import "github.com/HaythmKenway/autoscout/pkg/localUtils"
+import (
+	"database/sql"
 
-// job done
-func createTargetTableIfNotExists() error {
-	db, err := openDatabase()
-	localUtils.CheckError(err)
-	defer db.Close()
+	"github.com/HaythmKenway/autoscout/pkg/localUtils"
+)
 
-	_, err = db.Exec(`
+// --- Legacy Tables ---
+
+func createTargetTableIfNotExists(db *sql.DB) error {
+	_, err := db.Exec(`
         CREATE TABLE IF NOT EXISTS targets (
             lastModified DATE DEFAULT CURRENT_TIMESTAMP,
             lastScanned DATE,
@@ -18,12 +19,8 @@ func createTargetTableIfNotExists() error {
 	return err
 }
 
-func createSubsTableIfNotExists() error {
-	db, err := openDatabase()
-	localUtils.CheckError(err)
-	defer db.Close()
-
-	_, err = db.Exec(`
+func createSubsTableIfNotExists(db *sql.DB) error {
+	_, err := db.Exec(`
         CREATE TABLE IF NOT EXISTS subdomain (
             domain TEXT,
             subdomain TEXT PRIMARY KEY,
@@ -33,12 +30,8 @@ func createSubsTableIfNotExists() error {
 	return err
 }
 
-func createUrlsTableIfNotExist() error {
-	db, err := openDatabase()
-	localUtils.CheckError(err)
-	defer db.Close()
-
-	_, err = db.Exec(`
+func createUrlsTableIfNotExist(db *sql.DB) error {
+	_, err := db.Exec(`
         CREATE TABLE IF NOT EXISTS urls (
             title TEXT,
             url TEXT PRIMARY KEY,
@@ -53,14 +46,11 @@ func createUrlsTableIfNotExist() error {
             lastModified DATE DEFAULT CURRENT_TIMESTAMP
         )
     `)
-	return err}
+	return err
+}
 
-func createSpiderTableIfNotExist() error {
-	db, err := openDatabase()
-	localUtils.CheckError(err)
-	defer db.Close()
-
-	_, err = db.Exec(`
+func createSpiderTableIfNotExist(db *sql.DB) error {
+	_, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS spider (
 			domain TEXT,
 			url TEXT PRIMARY KEY,
@@ -68,4 +58,108 @@ func createSpiderTableIfNotExist() error {
 		)
 	`)
 	return err
+}
+
+// --- Workflow Tables ---
+
+func createProcFuncsTable(db *sql.DB) error {
+	query := `CREATE TABLE IF NOT EXISTS proc_funcs (
+        proc_func_id INTEGER PRIMARY KEY,
+        func_name TEXT NOT NULL,
+        binary_path TEXT
+    );`
+	_, err := db.Exec(query)
+	return err
+}
+
+func createProcPathsTable(db *sql.DB) error {
+	query := `CREATE TABLE IF NOT EXISTS proc_paths (
+        proc_path_id INTEGER PRIMARY KEY,
+        path_name TEXT NOT NULL,
+        description TEXT
+    );`
+	_, err := db.Exec(query)
+	return err
+}
+
+func createBranchingRulesTable(db *sql.DB) error {
+	query := `CREATE TABLE IF NOT EXISTS branching_rules (
+        rule_id INTEGER PRIMARY KEY,
+        rule_name TEXT,
+        match_type TEXT CHECK(match_type IN ('REGEX', 'EXACT', 'TYPE')),
+        match_criteria TEXT NOT NULL,
+        priority INTEGER DEFAULT 0,
+        target_path_id INTEGER,
+        FOREIGN KEY(target_path_id) REFERENCES proc_paths(proc_path_id)
+    );`
+	_, err := db.Exec(query)
+	return err
+}
+
+func createProcPathItemsTable(db *sql.DB) error {
+	query := `CREATE TABLE IF NOT EXISTS proc_path_items (
+        item_id INTEGER PRIMARY KEY,
+        proc_path_id INTEGER NOT NULL,
+        proc_func_id INTEGER NOT NULL,
+        exec_order INTEGER NOT NULL,
+        input_source TEXT DEFAULT 'PREV_STEP_OUTPUT',
+        args TEXT,
+        UNIQUE(proc_path_id, exec_order),
+        FOREIGN KEY(proc_path_id) REFERENCES proc_paths(proc_path_id) ON DELETE CASCADE,
+        FOREIGN KEY(proc_func_id) REFERENCES proc_funcs(proc_func_id)
+    );`
+	_, err := db.Exec(query)
+	return err
+}
+
+// --- Seeder ---
+
+func SeedDefaultWorkflow(db *sql.DB) error {
+	var count int
+	row := db.QueryRow("SELECT COUNT(*) FROM proc_funcs")
+	if err := row.Scan(&count); err != nil || count > 0 {
+		return nil // Already seeded or error
+	}
+
+	localUtils.Logger("Seeding default workflow data...", 1)
+
+	// 1. Insert Tools
+	tools := []string{
+		`INSERT INTO proc_funcs (proc_func_id, func_name, binary_path) VALUES (1, 'Subfinder', 'subfinder')`,
+		`INSERT INTO proc_funcs (proc_func_id, func_name, binary_path) VALUES (2, 'HTTPX', 'httpx')`,
+		`INSERT INTO proc_funcs (proc_func_id, func_name, binary_path) VALUES (3, 'GoSpider', 'gospider')`,
+		`INSERT INTO proc_funcs (proc_func_id, func_name, binary_path) VALUES (4, 'DalFox', 'dalfox')`,
+	}
+	for _, q := range tools {
+		if _, err := db.Exec(q); err != nil {
+			return err
+		}
+	}
+
+	// 2. Insert Paths
+	path := `INSERT INTO proc_paths (proc_path_id, path_name, description) VALUES (10, 'Standard Domain Recon', 'Subfinder -> HTTPX -> GoSpider -> DalFox')`
+	if _, err := db.Exec(path); err != nil {
+		return err
+	}
+
+	// 3. Insert Rules
+	rule := `INSERT INTO branching_rules (rule_id, rule_name, match_type, match_criteria, target_path_id) VALUES (100, 'Domain Match', 'REGEX', '^[a-zA-Z0-9-]+\.[a-zA-Z]+$', 10)`
+	if _, err := db.Exec(rule); err != nil {
+		return err
+	}
+
+	// 4. Insert Steps
+	steps := []string{
+		`INSERT INTO proc_path_items (proc_path_id, proc_func_id, exec_order, input_source, args) VALUES (10, 1, 1, 'USER_INPUT', '-silent -d')`,
+		`INSERT INTO proc_path_items (proc_path_id, proc_func_id, exec_order, input_source, args) VALUES (10, 2, 2, 'PREV_STEP_OUTPUT', '-silent -status-code -tech-detect')`,
+		`INSERT INTO proc_path_items (proc_path_id, proc_func_id, exec_order, input_source, args) VALUES (10, 3, 3, 'PREV_STEP_OUTPUT', '-q -s')`,
+		`INSERT INTO proc_path_items (proc_path_id, proc_func_id, exec_order, input_source, args) VALUES (10, 4, 4, 'PREV_STEP_OUTPUT', 'pipe --silence --skip-mining-all')`,
+	}
+	for _, q := range steps {
+		if _, err := db.Exec(q); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

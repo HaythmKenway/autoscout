@@ -1,71 +1,77 @@
 package db
 
 import (
+	"database/sql"
 	"fmt"
 
 	"github.com/HaythmKenway/autoscout/pkg/localUtils"
 )
 
-func AddUrl(title string, url string, host string, scheme string, a string, cname string, tech string, ip string, port string, status_code string) {
-	db, err := openDatabase()
-	if err != nil {
-		localUtils.Logger(fmt.Sprintf("Error opening database: %v\n", err), 2)
-		return
-	}
-	defer db.Close()
-	if err := createUrlsTableIfNotExist(); err != nil {
-		localUtils.Logger(fmt.Sprintf("Error creating table: %v\n", err), 2)
-		return
-	}
-	stmt, err := db.Prepare("INSERT INTO urls(title,url,host,scheme,a,cname,tech,ip,port,status_code) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT (url) DO UPDATE SET title=excluded.title, host=excluded.host, scheme=excluded.scheme, a=excluded.a, cname=excluded.cname, tech=excluded.tech, ip=excluded.ip, port=excluded.port, status_code=excluded.status_code")
-	if err != nil {
-		localUtils.Logger(fmt.Sprintf("Error preparing statement: %v\n", err), 2)
-		return
-	}
-	defer stmt.Close()
+// AddUrl inserts or updates a URL record.
+// Accepts *sql.DB to reuse the connection from the worker/scheduler.
+func AddUrl(db *sql.DB, title string, url string, host string, scheme string, a string, cname string, tech string, ip string, port string, status_code string) error {
+	query := `INSERT INTO urls(title,url,host,scheme,a,cname,tech,ip,port,status_code) 
+              VALUES(?,?,?,?,?,?,?,?,?,?) 
+              ON CONFLICT (url) DO UPDATE SET 
+              title=excluded.title, host=excluded.host, scheme=excluded.scheme, 
+              a=excluded.a, cname=excluded.cname, tech=excluded.tech, 
+              ip=excluded.ip, port=excluded.port, status_code=excluded.status_code`
 
-	_, err = stmt.Exec(title, url, host, scheme, a, cname, tech, ip, port, status_code)
+	_, err := db.Exec(query, title, url, host, scheme, a, cname, tech, ip, port, status_code)
 	if err != nil {
-		localUtils.Logger(fmt.Sprintf("Error inserting data: %v\n", err), 2)
-		return
+		localUtils.Logger(fmt.Sprintf("Error inserting URL data: %v", err), 2)
+		return err
 	}
-	localUtils.Logger("Data inserted successfully", 1)
 
+	localUtils.Logger("URL Data inserted/updated successfully", 1)
+	return nil
 }
 
-func GetDataFromTable(Tgturl string) ([]string, error) {
-	db, err := openDatabase()
-	localUtils.CheckError(err)
-	defer db.Close()
-
+// GetDataFromTable searches for a URL and returns its details.
+// Accepts *sql.DB to reuse the connection.
+func GetDataFromTable(db *sql.DB, Tgturl string) ([]string, error) {
+	// Use the passed DB connection
 	rows, err := db.Query("SELECT * FROM urls WHERE url LIKE ?", "%"+Tgturl+"%")
-	localUtils.CheckError(err)
 	if err != nil {
+		localUtils.CheckError(err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	var (
+		title        string
+		url          string
+		host         string
+		scheme       string
+		a            string
+		cname        string
+		tech         string
+		ip           string
+		port         string
+		status_code  string
+		lastModified string
+		found        bool
+	)
+
+	// Iterate through rows.
+	// NOTE: Since this returns a single []string, it effectively returns the LAST match found.
+	for rows.Next() {
+		err = rows.Scan(&title, &url, &host, &scheme, &a, &cname, &tech, &ip, &port, &status_code, &lastModified)
+		if err != nil {
+			localUtils.CheckError(err)
+			continue
+		}
+		found = true
+	}
+
+	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 
-	defer rows.Close()
-
-	var title string
-	var url string
-	var host string
-	var scheme string
-	var a string
-	var cname string
-	var tech string
-	var ip string
-	var port string
-	var status_code string
-	var lastModified string
-
-	for rows.Next() {
-		err = rows.Scan(&title, &url, &host, &scheme, &a, &cname, &tech, &ip, &port, &status_code, &lastModified)
-		localUtils.CheckError(err)
-	}
-	localUtils.CheckError(err)
-	if url == "" {
+	if !found {
 		return nil, fmt.Errorf("target not found")
 	}
-	var res = []string{title, url, host, scheme, a, cname, tech, ip, port, status_code}
-	return res, err
+
+	// Return the columns as a slice of strings
+	return []string{title, url, host, scheme, a, cname, tech, ip, port, status_code}, nil
 }

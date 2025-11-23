@@ -15,26 +15,34 @@ func ClearDB() error {
 	return cmd.Run()
 }
 
+// OpenDatabase is exported so the Scheduler can use it
+func OpenDatabase() (*sql.DB, error) {
+	return sql.Open("sqlite3", DatabaseFile)
+}
+
 func Deamon() {
-	db, err := openDatabase()
+	db, err := OpenDatabase()
 	if err != nil {
 		localUtils.CheckError(err)
 		return
 	}
 	defer db.Close()
 
-	if err := createTargetTableIfNotExists(); err != nil {
+	if err := createTargetTableIfNotExists(db); err != nil {
 		localUtils.CheckError(err)
 		return
 	}
 
-	urls, err := GetTargetsFromTable()
+	// Updated to pass db connection
+	urls, err := GetTargetsFromTable(db)
 	if err != nil {
 		localUtils.CheckError(err)
 		return
 	}
 
 	for _, url := range urls {
+		// SubdomainEnum now manages its own connection or receives one depending on implementation
+		// For the standalone deamon, we let it function as is, or update it to take db
 		if err := SubdomainEnum(url); err != nil {
 			localUtils.CheckError(err)
 		}
@@ -42,30 +50,60 @@ func Deamon() {
 }
 
 func CheckTables() {
-	db, err := openDatabase()
+	db, err := OpenDatabase()
 	if err != nil {
 		localUtils.CheckError(err)
 		return
 	}
 	defer db.Close()
 
-	if err := createTargetTableIfNotExists(); err != nil {
+	// --- Enable Foreign Keys for SQLite ---
+	if _, err := db.Exec("PRAGMA foreign_keys = ON;"); err != nil {
 		localUtils.CheckError(err)
 		return
 	}
-	if err := createSubsTableIfNotExists(); err != nil {
+
+	// --- 1. Existing Result Tables ---
+	if err := createTargetTableIfNotExists(db); err != nil {
 		localUtils.CheckError(err)
 		return
 	}
-	if err := createUrlsTableIfNotExist(); err != nil {
+	if err := createSubsTableIfNotExists(db); err != nil {
 		localUtils.CheckError(err)
 		return
 	}
-	if err := createSpiderTableIfNotExist(); err != nil {
+	if err := createUrlsTableIfNotExist(db); err != nil {
 		localUtils.CheckError(err)
 		return
 	}
-}
-func openDatabase() (*sql.DB, error) {
-	return sql.Open("sqlite3", DatabaseFile)
+	if err := createSpiderTableIfNotExist(db); err != nil {
+		localUtils.CheckError(err)
+		return
+	}
+
+	// --- 2. New Workflow Tables ---
+	if err := createProcFuncsTable(db); err != nil {
+		localUtils.CheckError(err)
+		return
+	}
+	if err := createProcPathsTable(db); err != nil {
+		localUtils.CheckError(err)
+		return
+	}
+	if err := createBranchingRulesTable(db); err != nil {
+		localUtils.CheckError(err)
+		return
+	}
+	if err := createProcPathItemsTable(db); err != nil {
+		localUtils.CheckError(err)
+		return
+	}
+
+	// --- 3. Seed Default Data ---
+	if err := SeedDefaultWorkflow(db); err != nil {
+		localUtils.CheckError(err)
+		return
+	}
+
+	localUtils.Logger("Database tables and seed data checked successfully", 1)
 }

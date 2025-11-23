@@ -4,32 +4,40 @@ import (
 	"database/sql"
 	"fmt"
 	URL "net/url"
+	"strings"
 	"time"
-
-	"github.com/HaythmKenway/autoscout/pkg/localUtils"
 )
 
-func AddTarget(url string) (string, error) { 
-	u, err := URL.ParseRequestURI("http://" + url)
-	url = u.Hostname()
+// AddTarget manages its own connection (CLI tool usage)
+func AddTarget(input string) (string, error) {
+	if !strings.HasPrefix(input, "http") {
+		input = "http://" + input
+	}
+	u, err := URL.ParseRequestURI(input)
 	if err != nil {
 		return "Invalid Domain", err
 	}
-	db, err := openDatabase()
+	hostname := u.Hostname()
+
+	db, err := OpenDatabase()
 	if err != nil {
 		return "Error opening Database", err
 	}
 	defer db.Close()
 
-	createTargetTableIfNotExists()
-	_, err = db.Exec("INSERT INTO targets (subdomain) VALUES (?)", url)
+	// Ensure table exists (safe redundancy for CLI)
+	createTargetTableIfNotExists(db)
+
+	_, err = db.Exec("INSERT OR IGNORE INTO targets (subdomain) VALUES (?)", hostname)
 	if err != nil {
 		return "Error inserting into Database", err
 	}
 	return "Target added successfully", nil
 }
+
+// RemoveTarget manages its own connection (CLI tool usage)
 func RemoveTarget(url string) (string, error) {
-	db, err := openDatabase()
+	db, err := OpenDatabase()
 	if err != nil {
 		return "Error opening Database", err
 	}
@@ -42,33 +50,28 @@ func RemoveTarget(url string) (string, error) {
 	return "Target removed successfully", nil
 }
 
-func ScanCompleted(target string) {
-	db, err := openDatabase()
-	localUtils.CheckError(err)
-	defer db.Close()
-
-	stmt, err := db.Prepare("UPDATE targets SET lastScanned = $1 WHERE subdomain = $2")
-	localUtils.CheckError(err)
+// ScanCompleted accepts DB connection (Used by Scheduler/Workers)
+func ScanCompleted(db *sql.DB, target string) error {
+	stmt, err := db.Prepare("UPDATE targets SET lastScanned = ? WHERE subdomain = ?")
+	if err != nil {
+		return err
+	}
 	defer stmt.Close()
 
 	_, err = stmt.Exec(time.Now(), target)
-	localUtils.CheckError(err)
+	return err
 }
 
-
-func GetTargetsFromTable(daysOpt ...int) ([]string, error) {
+// GetTargetsFromTable accepts DB connection (Used by Scheduler)
+func GetTargetsFromTable(db *sql.DB, daysOpt ...int) ([]string, error) {
 	days := 0
 	if len(daysOpt) > 0 {
-		days = daysOpt[0]}
-
-	db, err := openDatabase()
-	if err != nil {
-		return nil, err
+		days = daysOpt[0]
 	}
-	defer db.Close()
 
 	var (
 		stmt *sql.Stmt
+		err  error
 		rows *sql.Rows
 	)
 
@@ -77,24 +80,23 @@ func GetTargetsFromTable(daysOpt ...int) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		defer stmt.Close()
-
-		rows, err = stmt.Query()
-		if err != nil {
-			return nil, err
-		}
 	} else {
-		stmt, err = db.Prepare(`SELECT subdomain FROM targets WHERE lastScanned < $1 OR lastScanned is NULL`)
+		stmt, err = db.Prepare(`SELECT subdomain FROM targets WHERE lastScanned < ? OR lastScanned is NULL`)
 		if err != nil {
 			return nil, fmt.Errorf("prepare error: %w", err)
 		}
-		defer stmt.Close()
+	}
+	defer stmt.Close()
 
+	if days == 0 {
+		rows, err = stmt.Query()
+	} else {
 		cutoff := time.Now().AddDate(0, 0, -days)
 		rows, err = stmt.Query(cutoff)
-		if err != nil {
-			return nil, fmt.Errorf("query error: %w", err)
-		}
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("query error: %w", err)
 	}
 	defer rows.Close()
 
@@ -105,10 +107,6 @@ func GetTargetsFromTable(daysOpt ...int) ([]string, error) {
 			return nil, err
 		}
 		urls = append(urls, u)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, err
 	}
 
 	return urls, nil

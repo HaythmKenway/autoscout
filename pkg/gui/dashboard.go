@@ -1,10 +1,10 @@
 package gui
 
 import (
- tea "github.com/charmbracelet/bubbletea"
- 	"github.com/charmbracelet/lipgloss"
-	zone "github.com/lrstanley/bubblezone"
 	scheduler "github.com/HaythmKenway/autoscout/internal/scheduler"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	zone "github.com/lrstanley/bubblezone"
 )
 
 var (
@@ -27,16 +27,16 @@ var (
 				Underline(true)
 )
 
-type dashboardModel struct{
-	dialog dialog
+type dashboardModel struct {
+	dialog     dialog
 	app_status bool
 }
 
-type dialog struct{
-	id string
-	height int 
-	width  int 
-	active string
+type dialog struct {
+	id       string
+	height   int
+	width    int
+	active   string
 	question string
 }
 
@@ -44,8 +44,8 @@ func (m dashboardModel) Init() tea.Cmd {
 	return nil
 }
 
-func NewDashboardModel(w int,h int) dashboardModel {
-	return dashboardModel{dialog:dialog{width: 30,height: 20}}
+func NewDashboardModel(w int, h int) dashboardModel {
+	return dashboardModel{dialog: dialog{width: 30, height: 20}}
 }
 
 func (m dashboardModel) Update(msg tea.Msg) (dashboardModel, tea.Cmd) {
@@ -58,7 +58,7 @@ func (m dashboardModel) Update(msg tea.Msg) (dashboardModel, tea.Cmd) {
 		}
 
 		if zone.Get(m.dialog.id + "ToggleStart").InBounds(msg) {
-			m.app_status=!m.app_status
+			m.app_status = !m.app_status
 			scheduler.Skibbidi(m.app_status)
 		}
 
@@ -69,17 +69,17 @@ func (m dashboardModel) Update(msg tea.Msg) (dashboardModel, tea.Cmd) {
 }
 
 func (m dashboardModel) View() string {
-	var startButton,question string	
+	var startButton, question string
 	if m.app_status {
-		startButton=activeButtonStyle.Render("Stop")
+		startButton = activeButtonStyle.Render("Stop")
 		question = lipgloss.NewStyle().Width(27).Align(lipgloss.Center).Render("Stop Services")
 	} else {
-		startButton=buttonStyle.Render("Start")
+		startButton = buttonStyle.Render("Start")
 		question = lipgloss.NewStyle().Width(27).Align(lipgloss.Center).Render("Start Services")
 	}
 	buttons := lipgloss.JoinHorizontal(
 		lipgloss.Top,
-			zone.Mark(m.dialog.id+"ToggleStart",startButton),
+		zone.Mark(m.dialog.id+"ToggleStart", startButton),
 	)
 	return dialogBoxStyle.Render(lipgloss.JoinVertical(lipgloss.Center, question, buttons))
 }

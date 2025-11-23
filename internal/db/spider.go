@@ -1,22 +1,28 @@
 package db
 
 import (
+	"database/sql"
+
 	"github.com/HaythmKenway/autoscout/pkg/localUtils"
 )
-func AddSpiderTargets(domain string, targets []string) {
-	db, err := openDatabase()
-	localUtils.CheckError(err)
-	defer db.Close()
-	
-	stmt, err := db.Prepare("INSERT INTO spider(domain,url) VALUES(?,?)")
-	localUtils.CheckError(err)
-	
-	for _, target := range targets {
-		if target != ""{ 
-		_, err = stmt.Exec(domain, target)
-		localUtils.CheckError(err)
-	}}
-	defer stmt.Close()
-	localUtils.Logger("Targets added for the domain "+domain, 1)
 
+// AddSpiderTargets now accepts an existing DB connection
+func AddSpiderTargets(db *sql.DB, domain string, targets []string) error {
+	stmt, err := db.Prepare("INSERT OR IGNORE INTO spider(domain,url) VALUES(?,?)")
+	if err != nil {
+		localUtils.CheckError(err)
+		return err
+	}
+	defer stmt.Close()
+
+	for _, target := range targets {
+		if target != "" {
+			_, err = stmt.Exec(domain, target)
+			if err != nil {
+				localUtils.CheckError(err)
+			}
+		}
+	}
+	localUtils.Logger("Spider targets added for domain "+domain, 1)
+	return nil
 }
