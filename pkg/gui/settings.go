@@ -3,8 +3,8 @@ package gui
 import (
 	"fmt"
 	"io/ioutil"
-	"log"
 	"os"
+	"path/filepath"
 
 	"github.com/HaythmKenway/autoscout/pkg/localUtils"
 	tea "github.com/charmbracelet/bubbletea"
@@ -30,7 +30,6 @@ type Settings struct {
 	Data  string `yaml:"data"`
 }
 
-
 type DiscordConfig struct {
 	Discord []Discord `yaml:"discord"`
 }
@@ -45,12 +44,14 @@ func NewSettingsModel(width int, height int) settingsModel {
 
 	discordConfig, err := readDiscordConfig(discordPath)
 	if err != nil {
-		log.Fatalf("Error reading discord config: %v", err)
+		// Log error but continue with empty config
+		// log.Fatalf("Error reading discord config: %v", err)
+		discordConfig = &DiscordConfig{}
 	}
 
 	settingsConfig, err := readSettingsConfig(settingsPath)
 	if err != nil {
-		settingsConfig = &SettingsConfig{} 
+		settingsConfig = &SettingsConfig{}
 	}
 
 	discordModel := &Discord{}
@@ -79,7 +80,7 @@ func NewSettingsModel(width int, height int) settingsModel {
 			huh.NewInput().Key("Dformat").Title("Discord Text format").Value(&discordModel.DiscordFormat),
 			huh.NewInput().Key("Dwebhook").Title("Discord Webhookurl").Value(&discordModel.DiscordWebhookURL),
 		),
-	).WithWidth(width - 40).WithHeight(height - 10)
+	).WithWidth(width - 5).WithHeight(height - 2) // Adjusted margins
 
 	return settingsModel{
 		form:         form,
@@ -92,6 +93,12 @@ func (m settingsModel) Init() tea.Cmd {
 }
 
 func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		// Make form responsive
+		m.form = m.form.WithWidth(msg.Width - 5).WithHeight(msg.Height - 2)
+	}
+
 	updatedForm, formCmd := m.form.Update(msg)
 	if f, ok := updatedForm.(*huh.Form); ok {
 		m.form = f
@@ -100,31 +107,25 @@ func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "tab":
-			if m.form.GetFocusedField().GetKey() != "Dwebhook" {
-				m.form.NextField()
-			}
-		case "shift+tab":
-			if m.form.GetFocusedField().GetKey() != "agent" {
-				m.form.PrevField()
-			}
 		case "enter":
-			key := m.form.GetFocusedField().GetKey()
-			value := m.form.GetFocusedField().GetValue()
+			// Only save if a field is focused
+			if m.form.GetFocusedField() != nil {
+				key := m.form.GetFocusedField().GetKey()
+				value := m.form.GetFocusedField().GetValue()
 
-			var valueStr string
-			switch v := value.(type) {
-			case string:
-				valueStr = v
-			case int:
-				valueStr = fmt.Sprintf("%d", v)
-			case float64:
-				valueStr = fmt.Sprintf("%f", v)
-			default:
-				valueStr = fmt.Sprintf("%v", v)
+				var valueStr string
+				switch v := value.(type) {
+				case string:
+					valueStr = v
+				case int:
+					valueStr = fmt.Sprintf("%d", v)
+				case float64:
+					valueStr = fmt.Sprintf("%f", v)
+				default:
+					valueStr = fmt.Sprintf("%v", v)
+				}
+				storetodb(m.discordModel, key, valueStr)
 			}
-
-			storetodb(m.discordModel, key, valueStr)
 		}
 	}
 
@@ -143,6 +144,7 @@ func storetodb(discord *Discord, key string, value string) {
 		updateSettingsConfig(key, value)
 	}
 }
+
 func updateDiscordConfig(discord *Discord, key string, value string) {
 	switch key {
 	case "Did":
@@ -160,9 +162,8 @@ func updateDiscordConfig(discord *Discord, key string, value string) {
 	config := &DiscordConfig{Discord: []Discord{*discord}}
 
 	path := os.ExpandEnv("$HOME/.config/notify/provider-config.yaml")
-	os.DirFS(path)
-	err := os.MkdirAll(os.ExpandEnv("$HOME/.config/notify"), os.ModePerm)
-	if err != nil {
+	// Ensure directory exists
+	if err := os.MkdirAll(filepath.Dir(path), os.ModePerm); err != nil {
 		localUtils.Logger(fmt.Sprintf("Error creating config directory: %v", err), 1)
 		return
 	}
@@ -174,7 +175,7 @@ func updateDiscordConfig(discord *Discord, key string, value string) {
 
 func updateSettingsConfig(key string, value string) {
 	filePath := os.ExpandEnv("$HOME/.config/autoscout/user-config.yaml")
-	dirPath := os.ExpandEnv("$HOME/.config/autoscout")
+	dirPath := filepath.Dir(filePath)
 
 	if err := os.MkdirAll(dirPath, os.ModePerm); err != nil {
 		localUtils.Logger(fmt.Sprintf("Error creating settings directory: %v", err), 1)
@@ -186,8 +187,8 @@ func updateSettingsConfig(key string, value string) {
 		if os.IsNotExist(err) {
 			config = &SettingsConfig{}
 		} else {
-			localUtils.Logger(fmt.Sprintf("Error reading Settings config: %v", err), 1)
-			return
+			// Don't log read errors if file is just empty/corrupt, reset instead
+			config = &SettingsConfig{}
 		}
 	}
 
@@ -202,8 +203,6 @@ func updateSettingsConfig(key string, value string) {
 		localUtils.Logger(fmt.Sprintf("Error writing Settings config: %v", err), 1)
 	}
 }
-
-
 
 func readDiscordConfig(filePath string) (*DiscordConfig, error) {
 	data, err := ioutil.ReadFile(filePath)
@@ -240,4 +239,3 @@ func writeSettingsConfig(filePath string, config *SettingsConfig) error {
 	}
 	return ioutil.WriteFile(filePath, data, os.ModePerm)
 }
-
