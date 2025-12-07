@@ -8,7 +8,7 @@ import (
 
 // AddSpiderTargets now accepts an existing DB connection
 func AddSpiderTargets(db *sql.DB, domain string, targets []string) error {
-	stmt, err := db.Prepare("INSERT OR IGNORE INTO spider(domain,url) VALUES(?,?)")
+	stmt, err := db.Prepare("INSERT OR IGNORE INTO spider(target,url) VALUES(?,?)")
 	if err != nil {
 		localUtils.CheckError(err)
 		return err

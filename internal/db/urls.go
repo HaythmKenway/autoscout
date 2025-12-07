@@ -9,15 +9,15 @@ import (
 
 // AddUrl inserts or updates a URL record.
 // Accepts *sql.DB to reuse the connection from the worker/scheduler.
-func AddUrl(db *sql.DB, title string, url string, host string, scheme string, a string, cname string, tech string, ip string, port string, status_code string) error {
-	query := `INSERT INTO urls(title,url,host,scheme,a,cname,tech,ip,port,status_code) 
-              VALUES(?,?,?,?,?,?,?,?,?,?) 
+func AddUrl(db *sql.DB, subdomain string, title string, url string, host string, scheme string, a string, cname string, tech string, ip string, port string, status_code string) error {
+	query := `INSERT INTO urls(subdomain,title,url,host,scheme,a,cname,tech,ip,port,status_code) 
+              VALUES(?,?,?,?,?,?,?,?,?,?,?) 
               ON CONFLICT (url) DO UPDATE SET 
-              title=excluded.title, host=excluded.host, scheme=excluded.scheme, 
+              subdomain=excluded.subdomain,title=excluded.title, host=excluded.host, scheme=excluded.scheme, 
               a=excluded.a, cname=excluded.cname, tech=excluded.tech, 
               ip=excluded.ip, port=excluded.port, status_code=excluded.status_code`
 
-	_, err := db.Exec(query, title, url, host, scheme, a, cname, tech, ip, port, status_code)
+	_, err := db.Exec(query, subdomain, title, url, host, scheme, a, cname, tech, ip, port, status_code)
 	if err != nil {
 		localUtils.Logger(fmt.Sprintf("Error inserting URL data: %v", err), 2)
 		return err
@@ -39,6 +39,7 @@ func GetDataFromTable(db *sql.DB, Tgturl string) ([]string, error) {
 	defer rows.Close()
 
 	var (
+		subdomain    string
 		title        string
 		url          string
 		host         string
@@ -56,7 +57,7 @@ func GetDataFromTable(db *sql.DB, Tgturl string) ([]string, error) {
 	// Iterate through rows.
 	// NOTE: Since this returns a single []string, it effectively returns the LAST match found.
 	for rows.Next() {
-		err = rows.Scan(&title, &url, &host, &scheme, &a, &cname, &tech, &ip, &port, &status_code, &lastModified)
+		err = rows.Scan(&subdomain, &title, &url, &host, &scheme, &a, &cname, &tech, &ip, &port, &status_code, &lastModified)
 		if err != nil {
 			localUtils.CheckError(err)
 			continue

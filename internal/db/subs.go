@@ -35,7 +35,6 @@ func SubdomainEnum(target string) error {
 
 	notifier.ClassifyNotification(insertElement)
 
-	// 3. Start Transaction
 	tx, err := db.Begin()
 	localUtils.CheckError(err)
 
@@ -57,7 +56,7 @@ func SubdomainEnum(target string) error {
 func GetSubsFromTable(db *sql.DB, domain string) ([]string, error) {
 	localUtils.Logger(fmt.Sprintf("Getting subdomains for domain: %v", domain), 1)
 
-	selectStmt, err := db.Prepare("SELECT subdomain FROM subdomain WHERE domain = ?")
+	selectStmt, err := db.Prepare("SELECT subdomain FROM subdomain WHERE parent_target = ?")
 	if err != nil {
 		return nil, err
 	}
@@ -82,6 +81,6 @@ func GetSubsFromTable(db *sql.DB, domain string) ([]string, error) {
 
 // AddSubs now accepts a Transaction, not the whole DB
 func AddSubs(tx *sql.Tx, url string, domain string) error {
-	_, err := tx.Exec("INSERT INTO subdomain (subdomain,domain) VALUES (?,?)", url, domain)
+	_, err := tx.Exec("INSERT INTO subdomain (subdomain,parent_target) VALUES (?,?)", url, domain)
 	return err
 }

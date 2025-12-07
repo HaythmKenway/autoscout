@@ -61,7 +61,7 @@ func Httpx(dbConn *sql.DB, domain string) {
 		localUtils.Logger(fmt.Sprintf("Failed to parse httpx JSON for %s: %v", domain, err), 2)
 		return
 	}
-
+	subdomain := domain
 	title := assertInterfaces(result["title"])
 	url := assertInterfaces(result["url"])
 	host := assertInterfaces(result["host"])
@@ -74,7 +74,7 @@ func Httpx(dbConn *sql.DB, domain string) {
 	ip := assertInterfaces(result["ip"])
 
 	// Pass the existing DB connection to AddUrl
-	if err := db.AddUrl(dbConn, title, url, host, scheme, a, cname, tech, ip, port, statusCode); err != nil {
+	if err := db.AddUrl(dbConn, subdomain, title, url, host, scheme, a, cname, tech, ip, port, statusCode); err != nil {
 		localUtils.Logger(fmt.Sprintf("Error saving URL to DB: %v", err), 2)
 	}
 
