@@ -6,8 +6,6 @@ import (
 	"github.com/HaythmKenway/autoscout/pkg/localUtils"
 )
 
-// --- Legacy Tables ---
-
 func createTargetTableIfNotExists(db *sql.DB) error {
 	_, err := db.Exec(`
         CREATE TABLE IF NOT EXISTS targets (
@@ -19,18 +17,35 @@ func createTargetTableIfNotExists(db *sql.DB) error {
 	return err
 }
 
+// target pattern table
+func createTargetPatternsIfNotExists(db *sql.DB) error {
+	_, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS target_patterns (
+			pattern_id INTEGER PRIMARY KEY,
+			pattern TEXT NOT NULL,
+			target_type TEXT CHECK(target_type IN ('INCLUDE', 'EXCLUDE')) NOT NULL,
+			subdomain TEXT,
+			FOREIGN KEY(subdomain) REFERENCES targets(subdomain) ON DELETE CASCADE
+		)
+	`)
+	return err
+}
+
 func createSubsTableIfNotExists(db *sql.DB) error {
+	// Linked via 'domain' column
 	_, err := db.Exec(`
         CREATE TABLE IF NOT EXISTS subdomain (
             domain TEXT,
             subdomain TEXT PRIMARY KEY,
-            lastModified DATE DEFAULT CURRENT_TIMESTAMP
+            lastModified DATE DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(domain) REFERENCES targets(subdomain) ON DELETE CASCADE
         )
     `)
 	return err
 }
 
 func createUrlsTableIfNotExist(db *sql.DB) error {
+	// Linked via 'host' column (assuming 'host' stores the target domain)
 	_, err := db.Exec(`
         CREATE TABLE IF NOT EXISTS urls (
             title TEXT,
@@ -43,24 +58,29 @@ func createUrlsTableIfNotExist(db *sql.DB) error {
             ip TEXT,
             port TEXT,
             status_code TEXT,
-            lastModified DATE DEFAULT CURRENT_TIMESTAMP
+            lastModified DATE DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(host) REFERENCES targets(subdomain) ON DELETE CASCADE
         )
     `)
 	return err
 }
 
 func createSpiderTableIfNotExist(db *sql.DB) error {
+	// Linked via 'domain' column
 	_, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS spider (
 			domain TEXT,
 			url TEXT PRIMARY KEY,
-			lastModified DATE DEFAULT CURRENT_TIMESTAMP
+			lastModified DATE DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY(domain) REFERENCES targets(subdomain) ON DELETE CASCADE
 		)
 	`)
 	return err
 }
 
-// --- Workflow Tables ---
+// --- Workflow Tables (Unchanged) ---
+// Note: These tables define the *process*, not the data specific to a target.
+// Therefore, they do not need foreign keys to the 'targets' table.
 
 func createProcFuncsTable(db *sql.DB) error {
 	query := `CREATE TABLE IF NOT EXISTS proc_funcs (

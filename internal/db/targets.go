@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	URL "net/url"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -110,4 +111,71 @@ func GetTargetsFromTable(db *sql.DB, daysOpt ...int) ([]string, error) {
 	}
 
 	return urls, nil
+}
+
+// GetPatternsForTarget filters patterns based on include and exclude regex rules,
+// and returns a list of matching strings.
+func GetPatternsForTarget(db *sql.DB, target string, items []string) ([]string, error) {
+	var includePatterns []string
+	var excludePatterns []string
+
+	query := `SELECT pattern, pattern_type FROM target_patterns WHERE target_subdomain = ?`
+	rows, err := db.Query(query, target)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	// Read patterns from database
+	for rows.Next() {
+		var pattern, patternType string
+		if err := rows.Scan(&pattern, &patternType); err != nil {
+			return nil, err
+		}
+
+		switch patternType {
+		case "INCLUDE":
+			includePatterns = append(includePatterns, pattern)
+		case "EXCLUDE":
+			excludePatterns = append(excludePatterns, pattern)
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	var results []string
+
+	// Apply filtering logic
+	for _, item := range items {
+		shouldInclude := false
+
+		// Check include patterns
+		for _, inc := range includePatterns {
+			if matched, _ := regexp.MatchString(inc, item); matched {
+				shouldInclude = true
+				break
+			}
+		}
+
+		// If no include rule matched → skip
+		if !shouldInclude && len(includePatterns) > 0 {
+			continue
+		}
+
+		// Check exclude patterns
+		for _, exc := range excludePatterns {
+			if matched, _ := regexp.MatchString(exc, item); matched {
+				shouldInclude = false
+				break
+			}
+		}
+
+		if shouldInclude {
+			results = append(results, item)
+		}
+	}
+
+	return results, nil
 }

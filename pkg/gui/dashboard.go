@@ -16,11 +16,9 @@ import (
 	scheduler "github.com/HaythmKenway/autoscout/internal/scheduler"
 )
 
-// Export TickMsg so gui.go can reference it explicitly
 type TickMsg time.Time
 
 var (
-	// Styles
 	dialogBoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder(), true).
 			BorderForeground(lipgloss.Color("#874BFD")).
@@ -84,7 +82,6 @@ func NewDashboardModel(w int, h int) dashboardModel {
 		h = 24
 	}
 
-	// Layout Logic
 	headerHeight := 8
 	titleHeight := 2
 	viewportHeight := 10
@@ -96,15 +93,21 @@ func NewDashboardModel(w int, h int) dashboardModel {
 
 	vp := viewport.New(vpWidth, viewportHeight)
 	vp.YPosition = headerHeight + titleHeight + 1
-
-	// Set initial content so it's not empty on first frame
-	vp.SetContent("Loading logs from: " + logPath + " ...")
+	vp.SetContent("Loading logs...")
 
 	return dashboardModel{
 		dialog:   dialog{width: w, height: h, id: "dash"},
 		logPath:  logPath,
 		viewport: vp,
 		ready:    true,
+	}
+}
+
+// runScheduler executes the background logic as a tea.Cmd to keep UI responsive
+func runScheduler(status bool) tea.Cmd {
+	return func() tea.Msg {
+		scheduler.Skibbidi(status)
+		return nil
 	}
 }
 
@@ -123,22 +126,24 @@ func (m dashboardModel) Update(msg tea.Msg) (dashboardModel, tea.Cmd) {
 		m.ready = true
 
 	case tea.MouseMsg:
-		if msg.Action != tea.MouseActionRelease || msg.Button != tea.MouseButtonLeft {
-			return m, nil
-		}
-		if zone.Get(m.dialog.id + "ToggleStart").InBounds(msg) {
-			m.app_status = !m.app_status
-			scheduler.Skibbidi(m.app_status)
+		// FIX: Only check for click events here, but DO NOT return early.
+		// We must allow the code to fall through to m.viewport.Update(msg)
+		// so that mouse wheel scrolling works in the log view.
+		if msg.Action == tea.MouseActionRelease && msg.Button == tea.MouseButtonLeft {
+			if zone.Get(m.dialog.id + "ToggleStart").InBounds(msg) {
+				m.app_status = !m.app_status
+				cmds = append(cmds, runScheduler(m.app_status))
+			}
 		}
 
 	case TickMsg:
-		// Refresh Logs
 		content := getLastNLines(m.logPath, 10)
 		m.viewport.SetContent(content)
 		m.viewport.GotoBottom()
 		return m, tickEvery()
 	}
 
+	// Update viewport (handles scrolling)
 	m.viewport, cmd = m.viewport.Update(msg)
 	cmds = append(cmds, cmd)
 
@@ -162,6 +167,8 @@ func (m dashboardModel) View() string {
 
 	buttons := lipgloss.JoinHorizontal(
 		lipgloss.Top,
+		// Mark the button with the ID.
+		// Note: The ID here matches the one checked in Update
 		zone.Mark(m.dialog.id+"ToggleStart", startButton),
 	)
 
@@ -175,7 +182,6 @@ func (m dashboardModel) View() string {
 		logWidth = 0
 	}
 
-	// DEBUG: Showing path in title to verify location
 	titleText := fmt.Sprintf("Logs (%s)", filepath.Base(m.logPath))
 	logTitle := logTitleStyle.Width(logWidth).Render(titleText)
 
@@ -189,7 +195,11 @@ func (m dashboardModel) View() string {
 		Width(m.dialog.width - 4).
 		Render(logContent)
 
-	return lipgloss.JoinVertical(lipgloss.Left, controlPanel, logPanel)
+	ui := lipgloss.JoinVertical(lipgloss.Left, controlPanel, logPanel)
+
+	// CRITICAL FIX: Return the raw UI string.
+	// Do NOT call zone.Scan(ui) here, because gui.go (the parent) scans it.
+	return ui
 }
 
 func tickEvery() tea.Cmd {
@@ -204,9 +214,9 @@ func getLastNLines(path string, n int) string {
 		if os.IsNotExist(err) {
 			os.MkdirAll(filepath.Dir(path), 0755)
 			os.Create(path)
-			return "Log file created at " + path
+			return "Log file created."
 		}
-		return fmt.Sprintf("Error reading %s: %v", path, err)
+		return "Error reading log."
 	}
 	defer file.Close()
 
@@ -217,13 +227,12 @@ func getLastNLines(path string, n int) string {
 	}
 
 	if len(lines) == 0 {
-		return "Log file is empty."
+		return "No logs found."
 	}
 
 	start := 0
 	if len(lines) > n {
 		start = len(lines) - n
 	}
-
 	return strings.Join(lines[start:], "\n")
 }

@@ -14,6 +14,7 @@ require (
 	github.com/charmbracelet/wish v1.4.7
 	github.com/lrstanley/bubblezone v1.0.0
 	github.com/mattn/go-sqlite3 v1.14.17
+	github.com/projectdiscovery/gologger v1.1.45
 	github.com/projectdiscovery/subfinder/v2 v2.6.3
 	golang.org/x/term v0.31.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -102,7 +103,6 @@ require (
 	github.com/projectdiscovery/dnsx v1.1.6 // indirect
 	github.com/projectdiscovery/fastdialer v0.3.0 // indirect
 	github.com/projectdiscovery/goflags v0.1.74 // indirect
-	github.com/projectdiscovery/gologger v1.1.45 // indirect
 	github.com/projectdiscovery/hmap v0.0.81 // indirect
 	github.com/projectdiscovery/machineid v0.0.0-20240226150047-2e2c51e35983 // indirect
 	github.com/projectdiscovery/networkpolicy v0.1.1 // indirect
