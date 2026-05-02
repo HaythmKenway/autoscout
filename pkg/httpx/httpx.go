@@ -42,7 +42,7 @@ func Httpx(dbConn *sql.DB, domain string) {
 	// Note: Ensure 'httpx' is in your system PATH
 	cmd := exec.Command("httpx", "-u", domain, "-title", "-x", "get", "-status-code", "-ip", "-json", "-fr")
 
-	stdout, err := cmd.Output()
+	stdout, err := cmd.CombinedOutput()
 	if err != nil {
 		// Don't crash if httpx fails (e.g., domain not found), just log it
 		localUtils.Logger(fmt.Sprintf("httpx failed for %s: %v", domain, err), 2)

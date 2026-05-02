@@ -45,7 +45,6 @@ func SubdomainEnum(target string) error {
 			tx.Rollback()
 			return err
 		}
-		fmt.Println(subd)
 	}
 
 	err = tx.Commit()

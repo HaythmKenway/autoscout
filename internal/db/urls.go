@@ -31,7 +31,8 @@ func AddUrl(db *sql.DB, subdomain string, title string, url string, host string,
 // Accepts *sql.DB to reuse the connection.
 func GetDataFromTable(db *sql.DB, Tgturl string) ([]string, error) {
 	// Use the passed DB connection
-	rows, err := db.Query("SELECT * FROM urls WHERE url LIKE ?", "%"+Tgturl+"%")
+	query := "SELECT subdomain, title, url, host, scheme, a, cname, tech, ip, port, status_code, lastModified FROM urls WHERE url LIKE ?"
+	rows, err := db.Query(query, "%"+Tgturl+"%")
 	if err != nil {
 		localUtils.CheckError(err)
 		return nil, err
@@ -55,7 +56,6 @@ func GetDataFromTable(db *sql.DB, Tgturl string) ([]string, error) {
 	)
 
 	// Iterate through rows.
-	// NOTE: Since this returns a single []string, it effectively returns the LAST match found.
 	for rows.Next() {
 		err = rows.Scan(&subdomain, &title, &url, &host, &scheme, &a, &cname, &tech, &ip, &port, &status_code, &lastModified)
 		if err != nil {

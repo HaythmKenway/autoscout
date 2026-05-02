@@ -11,29 +11,17 @@ import (
 	"github.com/HaythmKenway/autoscout/internal/db"
 )
 
-var (
-	inputBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#874BFD")).
-			Padding(1).
-			Align(lipgloss.Center)
-
-	baseStyle = lipgloss.NewStyle().
-			BorderStyle(lipgloss.NormalBorder()).
-			BorderForeground(lipgloss.Color("240"))
-)
-
 type targetModel struct {
 	table  table.Model
 	input  textinput.Model
 	adding bool
 	width  int
 	height int
+	theme  Theme
 	err    error
 }
 
 func NewTargetModel(w, h int) targetModel {
-	// 1. Configure Table
 	columns := []table.Column{
 		{Title: "Target Domain", Width: w - 10},
 	}
@@ -41,22 +29,9 @@ func NewTargetModel(w, h int) targetModel {
 	t := table.New(
 		table.WithColumns(columns),
 		table.WithFocused(true),
-		table.WithHeight(h-8), // Reserve space for help text/headers
+		table.WithHeight(h-8),
 	)
 
-	s := table.DefaultStyles()
-	s.Header = s.Header.
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("240")).
-		BorderBottom(true).
-		Bold(false)
-	s.Selected = s.Selected.
-		Foreground(lipgloss.Color("229")).
-		Background(lipgloss.Color("57")).
-		Bold(false)
-	t.SetStyles(s)
-
-	// 2. Configure Input (for adding targets)
 	ti := textinput.New()
 	ti.Placeholder = "example.com"
 	ti.Focus()
@@ -69,11 +44,27 @@ func NewTargetModel(w, h int) targetModel {
 		adding: false,
 		width:  w,
 		height: h,
+		theme:  ModernTheme,
 	}
 
-	// Load initial data
 	m.refreshTargets()
+	m.applyStyles()
 	return m
+}
+
+func (m *targetModel) applyStyles() {
+	s := table.DefaultStyles()
+	s.Header = s.Header.
+		BorderStyle(m.theme.Border).
+		BorderForeground(m.theme.BorderColor).
+		BorderBottom(true).
+		Bold(true).
+		Foreground(m.theme.Accent)
+	s.Selected = s.Selected.
+		Foreground(lipgloss.Color("#ffffff")).
+		Background(m.theme.Highlight).
+		Bold(true)
+	m.table.SetStyles(s)
 }
 
 func (m targetModel) Init() tea.Cmd {
@@ -87,12 +78,8 @@ func (m targetModel) Update(msg tea.Msg) (targetModel, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-
-		// Resize table dynamically
 		m.table.SetWidth(msg.Width - 4)
 		m.table.SetHeight(msg.Height - 8)
-
-		// Resize column to fit width
 		cols := m.table.Columns()
 		if len(cols) > 0 {
 			cols[0].Width = msg.Width - 10
@@ -100,11 +87,9 @@ func (m targetModel) Update(msg tea.Msg) (targetModel, tea.Cmd) {
 		}
 
 	case tea.KeyMsg:
-		// === Input Mode ===
 		if m.adding {
 			switch msg.String() {
 			case "enter":
-				// Save to DB
 				target := m.input.Value()
 				if target != "" {
 					if _, err := db.AddTarget(target); err != nil {
@@ -123,7 +108,6 @@ func (m targetModel) Update(msg tea.Msg) (targetModel, tea.Cmd) {
 			return m, cmd
 		}
 
-		// === Table Mode ===
 		switch msg.String() {
 		case "a":
 			m.adding = true
@@ -144,8 +128,19 @@ func (m targetModel) Update(msg tea.Msg) (targetModel, tea.Cmd) {
 
 func (m targetModel) View() string {
 	if m.adding {
+		inputBoxStyle := lipgloss.NewStyle().
+			Border(m.theme.Border).
+			BorderForeground(m.theme.Accent).
+			Padding(1).
+			Align(lipgloss.Center)
+
+		tw := m.width
+		if tw < 0 { tw = 0 }
+		th := m.height
+		if th < 0 { th = 0 }
+
 		return lipgloss.Place(
-			m.width, m.height,
+			tw, th,
 			lipgloss.Center, lipgloss.Center,
 			inputBoxStyle.Render(
 				fmt.Sprintf("Add New Target\n\n%s\n\n(Enter to Save, Esc to Cancel)", m.input.View()),
@@ -153,15 +148,25 @@ func (m targetModel) View() string {
 		)
 	}
 
+	tw := m.width - 4
+	if tw < 0 { tw = 0 }
+
+	baseStyle := lipgloss.NewStyle().
+		BorderStyle(m.theme.Border).
+		BorderForeground(m.theme.InactiveTabFG).
+		Width(tw)
+
 	return baseStyle.Render(
 		lipgloss.JoinVertical(lipgloss.Left,
 			m.table.View(),
-			"\n [a] Add Target   [d] Delete Target   [↑/↓] Navigate",
+			lipgloss.NewStyle().
+				Foreground(m.theme.InactiveTabFG).
+				MarginTop(1).
+				Render(" [a] Add Target   [d] Delete Target   [↑/↓] Navigate"),
 		),
 	)
 }
 
-// Helper to reload data from DB
 func (m *targetModel) refreshTargets() {
 	database, err := db.OpenDatabase()
 	if err != nil {

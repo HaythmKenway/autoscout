@@ -179,3 +179,25 @@ func GetPatternsForTarget(db *sql.DB, target string, items []string) ([]string, 
 
 	return results, nil
 }
+
+func addBlackListSubdomain(db *sql.DB, subdomain string) error {
+	pattern_type := "EXCLUDE"
+	stmt, err := db.Prepare("INSERT OR IGNORE INTO target_patterns (target_subdomain, pattern, pattern_type) VALUES (?,?,?)")
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	_, err = stmt.Exec(subdomain, subdomain, pattern_type)
+	return err
+}
+
+func addWhiteListSubdomain(db *sql.DB, subdomain string) error {
+	pattern_type := "INCLUDE"
+	stmt, err := db.Prepare("INSERT OR IGNORE INTO target_patterns (target_subdomain, pattern, pattern_type) VALUES (?,?,?)")
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	_, err = stmt.Exec(subdomain, subdomain, pattern_type)
+	return err
+}

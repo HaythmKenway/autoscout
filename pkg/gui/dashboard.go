@@ -1,55 +1,23 @@
 package gui
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	zone "github.com/lrstanley/bubblezone"
 
+	"github.com/HaythmKenway/autoscout/internal/db"
 	scheduler "github.com/HaythmKenway/autoscout/internal/scheduler"
 )
 
 type TickMsg time.Time
-
-var (
-	dialogBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder(), true).
-			BorderForeground(lipgloss.Color("#874BFD")).
-			Padding(1, 0).
-			Align(lipgloss.Center)
-
-	buttonStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FFF7DB")).
-			Background(lipgloss.Color("#888B7E")).
-			Padding(0, 3).
-			MarginTop(1).
-			MarginRight(2)
-
-	activeButtonStyle = buttonStyle.Copy().
-				Foreground(lipgloss.Color("#FFF7DB")).
-				Background(lipgloss.Color("#F25D94")).
-				MarginRight(2).
-				Underline(true)
-
-	logBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("62")).
-			Padding(0, 1)
-
-	logTitleStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("62")).
-			Bold(true).
-			Padding(0, 1).
-			Border(lipgloss.NormalBorder(), false, false, true, false).
-			BorderForeground(lipgloss.Color("62"))
-)
 
 type dashboardModel struct {
 	dialog     dialog
@@ -57,6 +25,8 @@ type dashboardModel struct {
 	viewport   viewport.Model
 	ready      bool
 	logPath    string
+	theme      Theme
+	stats      db.Stats
 }
 
 type dialog struct {
@@ -75,35 +45,18 @@ func NewDashboardModel(w int, h int) dashboardModel {
 	home, _ := os.UserHomeDir()
 	logPath := filepath.Join(home, ".autoscout", "go.log")
 
-	if w <= 0 {
-		w = 80
-	}
-	if h <= 0 {
-		h = 24
-	}
-
-	headerHeight := 8
-	titleHeight := 2
-	viewportHeight := 10
-
-	vpWidth := w - 6
-	if vpWidth < 0 {
-		vpWidth = 0
-	}
-
-	vp := viewport.New(vpWidth, viewportHeight)
-	vp.YPosition = headerHeight + titleHeight + 1
-	vp.SetContent("Loading logs...")
+	vp := viewport.New(w, h-12)
+	vp.SetContent("Waiting for system events...")
 
 	return dashboardModel{
 		dialog:   dialog{width: w, height: h, id: "dash"},
 		logPath:  logPath,
 		viewport: vp,
 		ready:    true,
+		theme:    ModernTheme,
 	}
 }
 
-// runScheduler executes the background logic as a tea.Cmd to keep UI responsive
 func runScheduler(status bool) tea.Cmd {
 	return func() tea.Msg {
 		scheduler.Skibbidi(status)
@@ -112,94 +65,101 @@ func runScheduler(status bool) tea.Cmd {
 }
 
 func (m dashboardModel) Update(msg tea.Msg) (dashboardModel, tea.Cmd) {
-	var (
-		cmd  tea.Cmd
-		cmds []tea.Cmd
-	)
+	var cmd tea.Cmd
+	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.dialog.width = msg.Width
 		m.dialog.height = msg.Height
-		m.viewport.Width = msg.Width - 6
-		m.viewport.Height = 10
-		m.ready = true
+		m.viewport.Width = msg.Width
+		m.viewport.Height = msg.Height - 12
 
 	case tea.MouseMsg:
-		// FIX: Only check for click events here, but DO NOT return early.
-		// We must allow the code to fall through to m.viewport.Update(msg)
-		// so that mouse wheel scrolling works in the log view.
-		if msg.Action == tea.MouseActionRelease && msg.Button == tea.MouseButtonLeft {
-			if zone.Get(m.dialog.id + "ToggleStart").InBounds(msg) {
-				m.app_status = !m.app_status
-				cmds = append(cmds, runScheduler(m.app_status))
-			}
+		// We handle mouse clicks in the root model using zone.Get
+		// But we need to make sure the coordinates are right.
+		// Actually, let's just keep the logic in the root model.
+
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "s":
+			m.app_status = !m.app_status
+			cmds = append(cmds, runScheduler(m.app_status))
 		}
 
 	case TickMsg:
-		content := getLastNLines(m.logPath, 10)
+		// Refresh stats with error handling to prevent UI freeze
+		if s, err := db.GetStats(); err == nil {
+			m.stats = s
+		}
+		
+		// Robust log tailing
+		content := getFormattedLogsTailSafe(m.logPath, 20)
 		m.viewport.SetContent(content)
 		m.viewport.GotoBottom()
 		return m, tickEvery()
 	}
 
-	// Update viewport (handles scrolling)
 	m.viewport, cmd = m.viewport.Update(msg)
 	cmds = append(cmds, cmd)
 
 	return m, tea.Batch(cmds...)
 }
 
-func (m dashboardModel) View() string {
+func (m dashboardModel) View(zm *zone.Manager) string {
 	if !m.ready {
 		return "Initializing Dashboard..."
 	}
 
-	// 1. Control Panel
-	var startButton, question string
+	statusText := "OFFLINE"
+	statusColor := lipgloss.Color("1") // Red
 	if m.app_status {
-		startButton = activeButtonStyle.Render("Stop")
-		question = lipgloss.NewStyle().Width(27).Align(lipgloss.Center).Render("Service Running")
-	} else {
-		startButton = buttonStyle.Render("Start")
-		question = lipgloss.NewStyle().Width(27).Align(lipgloss.Center).Render("Service Stopped")
+		statusText = "RUNNING"
+		statusColor = lipgloss.Color("2") // Green
 	}
 
-	buttons := lipgloss.JoinHorizontal(
-		lipgloss.Top,
-		// Mark the button with the ID.
-		// Note: The ID here matches the one checked in Update
-		zone.Mark(m.dialog.id+"ToggleStart", startButton),
-	)
+	header := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(statusColor).
+		Render(fmt.Sprintf("SYSTEM STATUS: %s", statusText))
 
-	controlPanel := dialogBoxStyle.Width(m.dialog.width - 4).Render(
-		lipgloss.JoinVertical(lipgloss.Center, question, buttons),
-	)
-
-	// 2. Log Panel
-	logWidth := m.dialog.width - 6
-	if logWidth < 0 {
-		logWidth = 0
+	btnText := "[ START SERVICE ]"
+	if m.app_status {
+		btnText = "[ STOP SERVICE ]"
 	}
+	
+	// Use the passed manager
+	btn := zm.Mark(m.dialog.id+"ToggleStart", lipgloss.NewStyle().
+		Background(m.theme.Accent).
+		Foreground(lipgloss.Color("#FFFFFF")).
+		Padding(0, 1).
+		Render(btnText))
 
-	titleText := fmt.Sprintf("Logs (%s)", filepath.Base(m.logPath))
-	logTitle := logTitleStyle.Width(logWidth).Render(titleText)
+	stats := fmt.Sprintf("Targets: %d | Subdomains: %d | Alive URLs: %d", m.stats.Targets, m.stats.Subs, m.stats.URLs)
+	
+	logTitle := lipgloss.NewStyle().
+		Foreground(m.theme.Accent).
+		Bold(true).
+		Render("--- LIVE SYSTEM FEED ---")
+	
+	// Ensure viewport doesn't overflow
+	logs := m.viewport.View()
 
-	logContent := lipgloss.JoinVertical(
-		lipgloss.Left,
+	help := lipgloss.NewStyle().
+		Foreground(m.theme.InactiveTabFG).
+		Render(" [s] Start/Stop   [1-4] Tabs   [tab] Panels   [q] Quit")
+
+	return lipgloss.JoinVertical(lipgloss.Left,
+		header,
+		btn,
+		"",
+		lipgloss.NewStyle().Foreground(m.theme.Highlight).Render(stats),
+		"",
 		logTitle,
-		m.viewport.View(),
+		logs,
+		"",
+		help,
 	)
-
-	logPanel := logBoxStyle.
-		Width(m.dialog.width - 4).
-		Render(logContent)
-
-	ui := lipgloss.JoinVertical(lipgloss.Left, controlPanel, logPanel)
-
-	// CRITICAL FIX: Return the raw UI string.
-	// Do NOT call zone.Scan(ui) here, because gui.go (the parent) scans it.
-	return ui
 }
 
 func tickEvery() tea.Cmd {
@@ -208,31 +168,74 @@ func tickEvery() tea.Cmd {
 	})
 }
 
-func getLastNLines(path string, n int) string {
+// Ultra-robust log tailing
+func getFormattedLogsTailSafe(path string, maxLines int) string {
 	file, err := os.Open(path)
 	if err != nil {
-		if os.IsNotExist(err) {
-			os.MkdirAll(filepath.Dir(path), 0755)
-			os.Create(path)
-			return "Log file created."
-		}
-		return "Error reading log."
+		return "Waiting for logs..."
 	}
 	defer file.Close()
 
-	var lines []string
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		lines = append(lines, scanner.Text())
+	stat, err := file.Stat()
+	if err != nil {
+		return "Log error"
 	}
 
-	if len(lines) == 0 {
-		return "No logs found."
+	// Tail the last 8KB
+	chunkSize := int64(8192)
+	if stat.Size() < chunkSize {
+		chunkSize = stat.Size()
+	}
+	
+	buf := make([]byte, chunkSize)
+	_, err = file.ReadAt(buf, stat.Size()-chunkSize)
+	if err != nil && err != os.ErrExist {
+		// Ignore read errors if file is growing
 	}
 
-	start := 0
-	if len(lines) > n {
-		start = len(lines) - n
+	raw := string(buf)
+	lines := strings.Split(raw, "\n")
+	
+	// Discard first line as it might be a partial line from the seek
+	if len(lines) > 1 {
+		lines = lines[1:]
 	}
-	return strings.Join(lines[start:], "\n")
+
+	var filtered []string
+	for _, line := range lines {
+		clean := sanitizeLine(line)
+		if clean == "" {
+			continue
+		}
+		
+		// Subtle colorization
+		if strings.Contains(clean, "ERRO") || strings.Contains(clean, "CRIT") {
+			clean = lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Render(clean)
+		} else if strings.Contains(clean, "ALER") {
+			clean = lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Render(clean)
+		} else if strings.Contains(clean, "INFO") {
+			clean = lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Render(clean)
+		}
+		
+		filtered = append(filtered, clean)
+	}
+
+	if len(filtered) == 0 {
+		return "Scanning log feed..."
+	}
+
+	if len(filtered) > maxLines {
+		filtered = filtered[len(filtered)-maxLines:]
+	}
+
+	return strings.Join(filtered, "\n")
+}
+
+func sanitizeLine(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsPrint(r) {
+			return r
+		}
+		return -1
+	}, s)
 }

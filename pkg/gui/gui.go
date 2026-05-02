@@ -3,7 +3,6 @@ package gui
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	"golang.org/x/term"
 
@@ -13,14 +12,27 @@ import (
 	zone "github.com/lrstanley/bubblezone"
 )
 
+type Panel int
+
+const (
+	PanelLeft Panel = iota
+	PanelRight
+)
+
 type model struct {
-	Tabs           []string
-	activeTab      int
-	width          int
-	height         int
-	settingsModel  settingsModel
-	dashboardModel dashboardModel
-	targetModel    targetModel
+	NavItems        []string
+	NavIcons        []string
+	activeTab       int
+	activePanel     Panel
+	sidebarExpanded bool
+	width           int
+	height          int
+	theme           Theme
+	settingsModel   settingsModel
+	dashboardModel  dashboardModel
+	targetModel     targetModel
+	docsModel       docsModel
+	zm              *zone.Manager
 }
 
 func (m model) Init() tea.Cmd {
@@ -28,6 +40,7 @@ func (m model) Init() tea.Cmd {
 		m.dashboardModel.Init(),
 		m.settingsModel.Init(),
 		m.targetModel.Init(),
+		m.docsModel.Init(),
 	)
 }
 
@@ -43,165 +56,213 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
-	// CRITICAL FIX: Handle TickMsg explicitly so the loop never dies
 	case TickMsg:
 		var dCmd tea.Cmd
 		m.dashboardModel, dCmd = m.dashboardModel.Update(msg)
 		cmds = append(cmds, dCmd)
 
 	case tea.KeyMsg:
-		if m.activeTab == 1 && m.targetModel.adding {
-			var tCmd tea.Cmd
-			m.targetModel, tCmd = m.targetModel.Update(msg)
-			cmds = append(cmds, tCmd)
-			return m, tea.Batch(cmds...)
-		}
-
 		switch msg.String() {
-		case "ctrl+c":
+		case "ctrl+c", "q":
 			return m, tea.Quit
-		case "right", "tab":
-			m.activeTab = min(m.activeTab+1, len(m.Tabs)-1)
+		case "tab":
+			if m.activePanel == PanelLeft {
+				m.activePanel = PanelRight
+			} else {
+				m.activePanel = PanelLeft
+			}
 			return m, nil
-		case "left", "shift+tab":
-			m.activeTab = max(m.activeTab-1, 0)
-			return m, nil
-		}
-
-	case tea.MouseMsg:
-		if msg.Action == tea.MouseActionRelease && msg.Button == tea.MouseButtonLeft {
-			for i := range m.Tabs {
-				if zone.Get(fmt.Sprintf("tab-%d", i)).InBounds(msg) {
-					m.activeTab = i
-					return m, nil
-				}
+		case "1", "2", "3", "4":
+			if !m.targetModel.adding {
+				m.activeTab = int(msg.String()[0] - '1')
+				m.activePanel = PanelRight
+			}
+		case "5":
+			return m, tea.Quit
+		case "up", "k":
+			if m.activePanel == PanelLeft && !m.targetModel.adding {
+				m.activeTab = max(m.activeTab-1, 0)
+			}
+		case "down", "j":
+			if m.activePanel == PanelLeft && !m.targetModel.adding {
+				m.activeTab = min(m.activeTab+1, len(m.NavItems)-1)
+			}
+		case "enter":
+			if m.activeTab == 4 {
+				return m, tea.Quit
 			}
 		}
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		cmds = append(cmds, m.handleResize(msg.Width, msg.Height))
 
-		tabAreaHeight := 4
-		contentHeight := m.height - tabAreaHeight
-		if contentHeight < 10 {
-			contentHeight = 10
+	case tea.MouseMsg:
+		if msg.Action == tea.MouseActionRelease && msg.Button == tea.MouseButtonLeft {
+			for i := range m.NavItems {
+				if m.zm.Get(fmt.Sprintf("nav-%d", i)).InBounds(msg) {
+					if i == 4 { // Exit
+						return m, tea.Quit
+					}
+					m.activeTab = i
+					m.activePanel = PanelLeft
+					return m, nil
+				}
+			}
+			// Dashboard Toggle Button
+			if m.activeTab == 0 && m.zm.Get(m.dashboardModel.dialog.id+"ToggleStart").InBounds(msg) {
+				m.dashboardModel.app_status = !m.dashboardModel.app_status
+				cmds = append(cmds, runScheduler(m.dashboardModel.app_status))
+			}
 		}
-
-		subMsg := tea.WindowSizeMsg{Width: m.width, Height: contentHeight}
-
-		var dCmd, sCmd, tCmd tea.Cmd
-		m.dashboardModel, dCmd = m.dashboardModel.Update(subMsg)
-		m.settingsModel, sCmd = m.settingsModel.Update(subMsg)
-		m.targetModel, tCmd = m.targetModel.Update(subMsg)
-		cmds = append(cmds, dCmd, sCmd, tCmd)
 	}
 
-	// Pass other messages to active tab
-	switch m.activeTab {
-	case 0:
-		// We already handled TickMsg, but dashboard might need keys/mouse
-		if _, ok := msg.(TickMsg); !ok {
+	// Delegate updates to components based on focus
+	if m.activePanel == PanelRight || m.activeTab == 1 { // Always update target model if it's adding
+		switch m.activeTab {
+		case 0:
 			var dCmd tea.Cmd
 			m.dashboardModel, dCmd = m.dashboardModel.Update(msg)
 			cmds = append(cmds, dCmd)
+		case 1:
+			var tCmd tea.Cmd
+			m.targetModel, tCmd = m.targetModel.Update(msg)
+			cmds = append(cmds, tCmd)
+		case 3:
+			var sCmd tea.Cmd
+			m.settingsModel, sCmd = m.settingsModel.Update(msg)
+			cmds = append(cmds, sCmd)
+
+			// Sync theme from settings
+			newThemeName := m.settingsModel.userSettings.Theme
+			if newThemeName != m.theme.Name {
+				switch newThemeName {
+				case "Neon":
+					m.theme = NeonTheme
+				case "Matrix":
+					m.theme = MatrixTheme
+				default:
+					m.theme = ModernTheme
+				}
+				m.dashboardModel.theme = m.theme
+				m.targetModel.theme = m.theme
+				m.targetModel.applyStyles()
+			}
 		}
-	case 1:
-		var tCmd tea.Cmd
-		m.targetModel, tCmd = m.targetModel.Update(msg)
-		cmds = append(cmds, tCmd)
-	case 3:
-		var sCmd tea.Cmd
-		m.settingsModel, sCmd = m.settingsModel.Update(msg)
-		cmds = append(cmds, sCmd)
 	}
 
 	return m, tea.Batch(cmds...)
 }
 
-var (
-	highlightColor = lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#7D56F4"}
+func (m *model) handleResize(w, h int) tea.Cmd {
+	leftWidth := int(float64(w) * 0.25)
+	if leftWidth < 15 {
+		leftWidth = 15
+	}
+	rightWidth := w - leftWidth - 1
 
-	inactiveTabStyle = lipgloss.NewStyle().
-				Border(tabBorderWithBottom("┴", "─", "┴"), true).
-				BorderForeground(highlightColor).
-				Padding(0, 1)
-
-	activeTabStyle = lipgloss.NewStyle().
-			Border(tabBorderWithBottom("┘", " ", "└"), true).
-			BorderForeground(highlightColor).
-			Padding(0, 1)
-
-	windowStyle = lipgloss.NewStyle().Padding(0, 1)
-)
-
-func tabBorderWithBottom(left, middle, right string) lipgloss.Border {
-	border := lipgloss.RoundedBorder()
-	border.BottomLeft = left
-	border.Bottom = middle
-	border.BottomRight = right
-	return border
+	subMsg := tea.WindowSizeMsg{Width: rightWidth, Height: h - 2}
+	var dCmd, sCmd, tCmd, docCmd tea.Cmd
+	m.dashboardModel, dCmd = m.dashboardModel.Update(subMsg)
+	m.settingsModel, sCmd = m.settingsModel.Update(subMsg)
+	m.targetModel, tCmd = m.targetModel.Update(subMsg)
+	m.docsModel, docCmd = m.docsModel.Update(subMsg)
+	return tea.Batch(dCmd, sCmd, tCmd, docCmd)
 }
 
 func (m model) View() string {
-	var renderedTabs []string
-	tabRowWidth := 0
+	if m.width < 20 || m.height < 10 {
+		return "Terminal too small for UI 2.0"
+	}
 
-	for i, tab := range m.Tabs {
-		style := inactiveTabStyle
+	leftWidth := int(float64(m.width) * 0.25)
+	if leftWidth < 15 {
+		leftWidth = 15
+	}
+	rightWidth := m.width - leftWidth - 1
+
+	// Render Left Panel (Navigation)
+	var navItems []string
+	for i, item := range m.NavItems {
+		style := lipgloss.NewStyle().Padding(0, 1)
 		if i == m.activeTab {
-			style = activeTabStyle
+			if m.activePanel == PanelLeft {
+				style = style.Background(m.theme.Accent).Foreground(lipgloss.Color("#ffffff")).Bold(true)
+			} else {
+				style = style.Background(m.theme.InactiveTabBG).Foreground(m.theme.Foreground)
+			}
+		} else {
+			style = style.Foreground(m.theme.InactiveTabFG)
 		}
-		tabStr := zone.Mark(fmt.Sprintf("tab-%d", i), style.Render(tab))
-		renderedTabs = append(renderedTabs, tabStr)
-		tabRowWidth += lipgloss.Width(tabStr)
+		
+		// Use the manager from the model
+		label := fmt.Sprintf("%s %s", m.NavIcons[i], item)
+		navItems = append(navItems, m.zm.Mark(fmt.Sprintf("nav-%d", i), style.Width(leftWidth - 2).Render(label)))
 	}
 
-	row := lipgloss.JoinHorizontal(lipgloss.Top, renderedTabs...)
+	leftPanel := lipgloss.NewStyle().
+		Width(leftWidth).
+		Height(m.height - 2).
+		Border(lipgloss.NormalBorder(), false, true, false, false).
+		BorderForeground(m.theme.BorderColor).
+		Render(lipgloss.JoinVertical(lipgloss.Left, navItems...))
 
-	if tabRowWidth < m.width {
-		gap := m.width - tabRowWidth - 4
-		if gap > 0 {
-			row += lipgloss.NewStyle().
-				Foreground(highlightColor).
-				Render(strings.Repeat("─", gap))
-		}
-	}
-
+	// Render Right Panel (Content)
 	content := ""
 	switch m.activeTab {
 	case 0:
-		content = m.dashboardModel.View()
+		content = m.dashboardModel.View(m.zm)
 	case 1:
 		content = m.targetModel.View()
 	case 2:
-		content = "\n  ≡ Analysis Page (Coming Soon)"
+		content = m.docsModel.View()
 	case 3:
 		content = m.settingsModel.View()
 	}
 
-	contentView := windowStyle.Width(m.width).Render(content)
-	return zone.Scan(lipgloss.JoinVertical(lipgloss.Left, row, contentView))
+	rightPanelStyle := lipgloss.NewStyle().
+		Width(rightWidth).
+		Height(m.height - 2).
+		Padding(0, 1)
+	
+	if m.activePanel == PanelRight {
+		rightPanelStyle = rightPanelStyle.Border(lipgloss.NormalBorder()).BorderForeground(m.theme.Accent)
+	}
+
+	rightPanel := rightPanelStyle.Render(content)
+
+	return m.zm.Scan(lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel))
 }
 
 func LoadGui() error {
 	w, h := getTerminalSize()
-	zone.NewGlobal()
+	zm := zone.New() // Create a local manager
+	
 	m := model{
-		Tabs:           []string{"⌂ Dashboard", "➤ Targets", "≡ Analysis", "☰ Settings"},
-		width:          w,
-		height:         h,
-		settingsModel:  NewSettingsModel(w, h),
-		dashboardModel: NewDashboardModel(w, h),
-		targetModel:    NewTargetModel(w, h),
+		NavItems:        []string{"Dashboard", "Targets", "Analysis", "Settings", "Exit"},
+		NavIcons:        []string{"⌂", "➤", "≡", "⚙", "⏻"},
+		activePanel:     PanelLeft,
+		sidebarExpanded: true,
+		theme:           ModernTheme,
+		width:           w,
+		height:          h,
+		zm:              zm,
 	}
+	
+	leftWidth := int(float64(w) * 0.25)
+	if leftWidth < 15 { leftWidth = 15 }
+	rightWidth := w - leftWidth - 1
+
+	m.settingsModel = NewSettingsModel(rightWidth, h-2)
+	m.dashboardModel = NewDashboardModel(rightWidth, h-2)
+	m.targetModel = NewTargetModel(rightWidth, h-2)
+	m.docsModel = NewDocsModel(rightWidth, h-2)
 
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 
-	if _, err := p.Run(); err != nil {
-		return fmt.Errorf("running program: %w", err)
-	}
-	return nil
+	_, err := p.Run()
+	return err
 }
 
 func SShHandler(s ssh.Session) (tea.Model, []tea.ProgramOption) {
@@ -212,28 +273,26 @@ func SShHandler(s ssh.Session) (tea.Model, []tea.ProgramOption) {
 		h = pty.Window.Height
 	}
 
-	zone.NewGlobal()
+	zm := zone.New()
 	m := model{
-		Tabs:           []string{"⌂ Dashboard", "➤ Targets", "≡ Analysis", "☰ Settings"},
-		width:          w,
-		height:         h,
-		settingsModel:  NewSettingsModel(w, h),
-		dashboardModel: NewDashboardModel(w, h),
-		targetModel:    NewTargetModel(w, h),
+		NavItems:        []string{"Dashboard", "Targets", "Analysis", "Settings", "Exit"},
+		NavIcons:        []string{"⌂", "➤", "≡", "⚙", "⏻"},
+		activePanel:     PanelLeft,
+		sidebarExpanded: true,
+		theme:           ModernTheme,
+		width:           w,
+		height:          h,
+		zm:              zm,
 	}
-	return m, []tea.ProgramOption{tea.WithAltScreen(), tea.WithMouseCellMotion()}
-}
 
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
+	leftWidth := int(float64(w) * 0.25)
+	if leftWidth < 15 { leftWidth = 15 }
+	rightWidth := w - leftWidth - 1
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
+	m.settingsModel = NewSettingsModel(rightWidth, h-2)
+	m.dashboardModel = NewDashboardModel(rightWidth, h-2)
+	m.targetModel = NewTargetModel(rightWidth, h-2)
+	m.docsModel = NewDocsModel(rightWidth, h-2)
+	
+	return m, []tea.ProgramOption{tea.WithAltScreen()}
 }

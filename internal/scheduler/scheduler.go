@@ -155,7 +155,10 @@ func executeJob(ctx context.Context, workerID int) {
 			localUtils.Logger(fmt.Sprintf("Worker %d stopped", workerID), 1)
 			return
 
-		case task := <-TaskQueue:
+		case task, ok := <-TaskQueue:
+			if !ok {
+				return
+			}
 			localUtils.Logger(fmt.Sprintf("[Worker %d] Processing: %s", workerID, task.Target), 1)
 
 			// Add to Active
@@ -346,9 +349,10 @@ func stopScheduler() {
 		cancel()
 	}
 
-	wg.Wait()
+	// We don't wait for workers here to avoid blocking the UI thread.
+	// Instead, we just mark as not running immediately.
 	running = false
-	localUtils.Logger("Scheduler stopped cleanly", 1)
+	localUtils.Logger("Scheduler stop signal sent", 1)
 }
 
 func Skibbidi(start bool) {

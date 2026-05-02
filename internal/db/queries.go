@@ -88,7 +88,7 @@ func createUrlsTableIfNotExist(db *sql.DB) error {
             port TEXT,
             status_code TEXT,
             lastModified DATE DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(host) REFERENCES targets(subdomain) ON DELETE CASCADE
+            FOREIGN KEY(host) REFERENCES targets(subdomain) ON DELETE CASCADE,
 			FOREIGN KEY(subdomain) REFERENCES subdomain(subdomain) ON DELETE CASCADE
         )
     `)

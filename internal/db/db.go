@@ -17,7 +17,8 @@ func ClearDB() error {
 
 // OpenDatabase is exported so the Scheduler can use it
 func OpenDatabase() (*sql.DB, error) {
-	return sql.Open("sqlite3", DatabaseFile)
+	dsn := DatabaseFile + "?_busy_timeout=5000"
+	return sql.Open("sqlite3", dsn)
 }
 
 func Deamon() {
