@@ -53,7 +53,8 @@ func (o *Orchestrator) processRequest(req burp.BurpRequest) {
 			raw := fmt.Sprintf("%s %s HTTP/1.1\nHost: %s\n\n%s", req.Method, req.URL, "target", req.Body)
 			go tools.RunSQLMap(action.Target, raw)
 		case "nuclei":
-			go tools.RunNuclei(action.Target, action.Params["tags"])
+			tags, _ := action.Params["tags"].(string)
+			go tools.RunNuclei(action.Target, tags)
 		case "katana":
 			go tools.RunKatana(action.Target)
 		case "ffuf":

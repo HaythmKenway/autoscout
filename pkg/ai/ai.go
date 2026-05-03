@@ -9,9 +9,9 @@ import (
 
 // AIAction defines a specific tool execution decided by the AI
 type AIAction struct {
-	Tool   string            `json:"tool"`
-	Target string            `json:"target"`
-	Params map[string]string `json:"params"`
+	Tool   string                 `json:"tool"`
+	Target string                 `json:"target"`
+	Params map[string]interface{} `json:"params"`
 }
 
 // AIPlan is the structured output from the LLM
