@@ -3,6 +3,8 @@ package com.autoscout.burp;
 import burp.api.montoya.MontoyaApi;
 import javax.swing.*;
 import java.awt.*;
+import java.net.HttpURLConnection;
+import java.net.URL;
 
 public class AutoscoutTab {
     private final JPanel mainPanel;
@@ -20,6 +22,11 @@ public class AutoscoutTab {
         controlPanel.add(new JLabel("Autoscout API:"));
         apiEndpointField = new JTextField("http://127.0.0.1:8081", 30);
         controlPanel.add(apiEndpointField);
+
+        JButton testBtn = new JButton("Test Connection");
+        testBtn.addActionListener(e -> testConnection());
+        controlPanel.add(testBtn);
+
         mainPanel.add(controlPanel, BorderLayout.NORTH);
 
         logArea = new JTextArea();
@@ -38,5 +45,25 @@ public class AutoscoutTab {
         SwingUtilities.invokeLater(() -> {
             logArea.append(message + "\n");
         });
+    }
+
+    private void testConnection() {
+        new Thread(() -> {
+            try {
+                log("Testing connection to " + getApiEndpoint() + "...");
+                URL url = new URL(getApiEndpoint());
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setConnectTimeout(2000);
+                conn.setRequestMethod("GET");
+                int code = conn.getResponseCode();
+                if (code == 200) {
+                    log("SUCCESS: Autoscout API is reachable!");
+                } else {
+                    log("FAILED: Server returned code " + code);
+                }
+            } catch (Exception ex) {
+                log("FAILED: " + ex.getMessage());
+            }
+        }).start();
     }
 }

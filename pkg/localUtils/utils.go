@@ -1,13 +1,13 @@
 package localUtils
 
 import (
+	"fmt"
 	"os"
 	"os/user"
 	"path/filepath"
 	"regexp"
 	"strings"
-
-	"github.com/charmbracelet/log"
+	"time"
 )
 
 func GetWorkingDirectory() string {
@@ -67,20 +67,29 @@ func CheckError(err error) {
 }
 
 func Logger(str string, sc int) {
-	f, err := os.OpenFile(GetWorkingDirectory()+"/go.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	dir := GetWorkingDirectory()
+	f, err := os.OpenFile(dir+"/go.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		log.Fatalf("error opening file: %v", err)
+		return
 	}
 	defer f.Close()
-	log.SetOutput(f)
+
+	timestamp := time.Now().Format("2006/01/02 15:04:05")
+	var prefix string
 	switch sc {
 	case 1:
-		log.Info(str)
+		prefix = "INFO"
 	case 2:
-		log.Error(str)
+		prefix = "ERRO"
 	case 3:
-		log.Debug(str)
+		prefix = "DEBU"
+	default:
+		prefix = "INFO"
 	}
+
+	line := fmt.Sprintf("%s %s %s\n", prefix, timestamp, str)
+	f.WriteString(line)
+	f.Sync()
 }
 func RemoveDuplicates(arr []string) []string {
 	uniqueMap := make(map[string]struct{})

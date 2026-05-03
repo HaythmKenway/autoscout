@@ -66,6 +66,7 @@ public class AutoscoutHttpHandler implements HttpHandler {
 
     private HttpRequest sendToAutoscout(String type, HttpRequest req) {
         try {
+            ui.log("-> Intercepted " + type + ": " + req.url());
             URL url = new URL(ui.getApiEndpoint() + "/request");
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("POST");
@@ -89,8 +90,11 @@ public class AutoscoutHttpHandler implements HttpHandler {
                 if (responseJson.has("modified") && responseJson.get("modified").getAsBoolean()) {
                     String newBodyBase64 = responseJson.get("body").getAsString();
                     byte[] newBody = Base64.getDecoder().decode(newBodyBase64);
+                    ui.log("<- Received modified body from Autoscout");
                     return req.withBody(ByteArray.byteArray(newBody));
                 }
+            } else {
+                ui.log("!! Autoscout returned error: " + conn.getResponseCode());
             }
         } catch (Exception e) {
             ui.log("Error sending request to Autoscout: " + e.getMessage());
@@ -100,6 +104,7 @@ public class AutoscoutHttpHandler implements HttpHandler {
 
     private HttpResponse sendToAutoscoutResponse(String type, HttpResponse resp) {
         try {
+            ui.log("-> Intercepted " + type);
             URL url = new URL(ui.getApiEndpoint() + "/response");
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("POST");
@@ -122,8 +127,11 @@ public class AutoscoutHttpHandler implements HttpHandler {
                 if (responseJson.has("modified") && responseJson.get("modified").getAsBoolean()) {
                     String newBodyBase64 = responseJson.get("body").getAsString();
                     byte[] newBody = Base64.getDecoder().decode(newBodyBase64);
+                    ui.log("<- Received modified response body from Autoscout");
                     return resp.withBody(ByteArray.byteArray(newBody));
                 }
+            } else {
+                ui.log("!! Autoscout returned error: " + conn.getResponseCode());
             }
         } catch (Exception e) {
             ui.log("Error sending response to Autoscout: " + e.getMessage());

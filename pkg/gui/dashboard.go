@@ -2,6 +2,7 @@ package gui
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,7 +25,10 @@ type dashboardModel struct {
 	dialog      dialog
 	app_status  bool
 	burp_status bool
-	viewport    viewport.Model
+	burp_reqs    int
+	burp_resps   int
+	burp_queue   []string
+	viewport     viewport.Model
 	ready       bool
 	logPath     string
 	theme       Theme
@@ -104,6 +108,7 @@ func (m dashboardModel) Update(msg tea.Msg) (dashboardModel, tea.Cmd) {
 			m.stats = s
 		}
 		m.burp_status = burp.IsRunning()
+		m.burp_reqs, m.burp_resps, m.burp_queue = burp.GetStats()
 		content := getFormattedLogsTailSafe(m.logPath, 20)
 		m.viewport.SetContent(content)
 		m.viewport.GotoBottom()
@@ -161,19 +166,21 @@ func (m dashboardModel) View(zm *zone.Manager) string {
 	if m.burp_status {
 		burpBtnText = "[ STOP API ] "
 	}
-	burpBtn := zm.Mark(m.dialog.id+"ToggleBurp", lipgloss.NewStyle().
+	proxyBtn := zm.Mark(m.dialog.id+"ToggleBurp", lipgloss.NewStyle().
 		Background(lipgloss.Color("6")).
 		Foreground(lipgloss.Color("#FFFFFF")).
 		Padding(0, 1).
 		Render(burpBtnText))
 
+	burpStats := fmt.Sprintf("Burp Intercepts: %d Req / %d Resp", m.burp_reqs, m.burp_resps)
+
 	stats := fmt.Sprintf("Targets: %d | Subdomains: %d | Alive URLs: %d", m.stats.Targets, m.stats.Subs, m.stats.URLs)
-	
+
 	logTitle := lipgloss.NewStyle().
 		Foreground(m.theme.Accent).
 		Bold(true).
-		Render("--- LIVE SYSTEM FEED ---")
-	
+		Render(fmt.Sprintf("--- SYSTEM FEED (%s) ---", m.logPath))
+
 	help := lipgloss.NewStyle().
 		Foreground(m.theme.InactiveTabFG).
 		Render(" [s] Scanner   [b] Burp API   [1-4] Tabs   [tab] Panels   [q] Quit")
@@ -181,7 +188,8 @@ func (m dashboardModel) View(zm *zone.Manager) string {
 	return lipgloss.JoinVertical(lipgloss.Left,
 		lipgloss.JoinHorizontal(lipgloss.Top, header, lipgloss.NewStyle().Width(5).Render(""), btn),
 		"",
-		lipgloss.JoinHorizontal(lipgloss.Top, burpHeader, lipgloss.NewStyle().Width(5).Render(""), burpBtn),
+		lipgloss.JoinHorizontal(lipgloss.Top, burpHeader, lipgloss.NewStyle().Width(5).Render(""), proxyBtn),
+		lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Render(burpStats),
 		"",
 		lipgloss.NewStyle().Foreground(m.theme.Highlight).Render(stats),
 		"",
@@ -207,27 +215,29 @@ func getFormattedLogsTailSafe(path string, maxLines int) string {
 	defer file.Close()
 
 	stat, err := file.Stat()
-	if err != nil {
-		return "Log error"
+	if err != nil || stat.Size() == 0 {
+		return "Log feed empty..."
 	}
 
-	// Tail the last 8KB
-	chunkSize := int64(8192)
-	if stat.Size() < chunkSize {
+	// Tail the last 32KB
+	chunkSize := int64(32768)
+	offset := stat.Size() - chunkSize
+	if offset < 0 {
+		offset = 0
 		chunkSize = stat.Size()
 	}
-	
+
 	buf := make([]byte, chunkSize)
-	_, err = file.ReadAt(buf, stat.Size()-chunkSize)
-	if err != nil && err != os.ErrExist {
-		// Ignore read errors if file is growing
+	_, err = file.ReadAt(buf, offset)
+	if err != nil && err != io.EOF {
+		return "Error reading logs"
 	}
 
 	raw := string(buf)
 	lines := strings.Split(raw, "\n")
-	
-	// Discard first line as it might be a partial line from the seek
-	if len(lines) > 1 {
+
+	// Only discard the first line if we jumped into the middle of the file
+	if offset > 0 && len(lines) > 1 {
 		lines = lines[1:]
 	}
 
@@ -237,7 +247,7 @@ func getFormattedLogsTailSafe(path string, maxLines int) string {
 		if clean == "" {
 			continue
 		}
-		
+
 		// Subtle colorization
 		if strings.Contains(clean, "ERRO") || strings.Contains(clean, "CRIT") {
 			clean = lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Render(clean)
@@ -246,7 +256,7 @@ func getFormattedLogsTailSafe(path string, maxLines int) string {
 		} else if strings.Contains(clean, "INFO") {
 			clean = lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Render(clean)
 		}
-		
+
 		filtered = append(filtered, clean)
 	}
 

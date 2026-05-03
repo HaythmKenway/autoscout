@@ -31,7 +31,7 @@ type model struct {
 	settingsModel   settingsModel
 	dashboardModel  dashboardModel
 	targetModel     targetModel
-	docsModel       docsModel
+	analysisModel   analysisModel
 	zm              *zone.Manager
 }
 
@@ -40,7 +40,7 @@ func (m model) Init() tea.Cmd {
 		m.dashboardModel.Init(),
 		m.settingsModel.Init(),
 		m.targetModel.Init(),
-		m.docsModel.Init(),
+		m.analysisModel.Init(),
 	)
 }
 
@@ -60,6 +60,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var dCmd tea.Cmd
 		m.dashboardModel, dCmd = m.dashboardModel.Update(msg)
 		cmds = append(cmds, dCmd)
+
+		// Sync analysis feed from dashboard's poll
+		for _, entry := range m.dashboardModel.burp_queue {
+			m.analysisModel.AddEntry(entry)
+		}
+		m.dashboardModel.burp_queue = []string{} // Clear after syncing
 
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -169,12 +175,12 @@ func (m *model) handleResize(w, h int) tea.Cmd {
 	rightWidth := w - leftWidth - 1
 
 	subMsg := tea.WindowSizeMsg{Width: rightWidth, Height: h - 2}
-	var dCmd, sCmd, tCmd, docCmd tea.Cmd
+	var dCmd, sCmd, tCmd, aCmd tea.Cmd
 	m.dashboardModel, dCmd = m.dashboardModel.Update(subMsg)
 	m.settingsModel, sCmd = m.settingsModel.Update(subMsg)
 	m.targetModel, tCmd = m.targetModel.Update(subMsg)
-	m.docsModel, docCmd = m.docsModel.Update(subMsg)
-	return tea.Batch(dCmd, sCmd, tCmd, docCmd)
+	m.analysisModel, aCmd = m.analysisModel.Update(subMsg)
+	return tea.Batch(dCmd, sCmd, tCmd, aCmd)
 }
 
 func (m model) View() string {
@@ -222,7 +228,7 @@ func (m model) View() string {
 	case 1:
 		content = m.targetModel.View()
 	case 2:
-		content = m.docsModel.View()
+		content = m.analysisModel.View()
 	case 3:
 		content = m.settingsModel.View()
 	}
@@ -263,7 +269,7 @@ func LoadGui() error {
 	m.settingsModel = NewSettingsModel(rightWidth, h-2)
 	m.dashboardModel = NewDashboardModel(rightWidth, h-2)
 	m.targetModel = NewTargetModel(rightWidth, h-2)
-	m.docsModel = NewDocsModel(rightWidth, h-2)
+	m.analysisModel = NewAnalysisModel(rightWidth, h-2)
 
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 
@@ -298,7 +304,7 @@ func SShHandler(s ssh.Session) (tea.Model, []tea.ProgramOption) {
 	m.settingsModel = NewSettingsModel(rightWidth, h-2)
 	m.dashboardModel = NewDashboardModel(rightWidth, h-2)
 	m.targetModel = NewTargetModel(rightWidth, h-2)
-	m.docsModel = NewDocsModel(rightWidth, h-2)
+	m.analysisModel = NewAnalysisModel(rightWidth, h-2)
 	
 	return m, []tea.ProgramOption{tea.WithAltScreen()}
 }

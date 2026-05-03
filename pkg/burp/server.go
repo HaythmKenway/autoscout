@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,12 +34,36 @@ var (
 	mu      sync.Mutex
 	running bool
 	server  *http.Server
+
+	// Traffic Stats
+	RequestsIntercepted  int
+	ResponsesIntercepted int
+
+	// Analysis Feed
+	AnalysisQueue []string
 )
 
 func IsRunning() bool {
 	mu.Lock()
 	defer mu.Unlock()
 	return running
+}
+
+func GetStats() (int, int, []string) {
+	mu.Lock()
+	defer mu.Unlock()
+	q := AnalysisQueue
+	AnalysisQueue = []string{} // Clear queue after polling
+	return RequestsIntercepted, ResponsesIntercepted, q
+}
+
+func addAnalysis(entry string) {
+	mu.Lock()
+	defer mu.Unlock()
+	AnalysisQueue = append(AnalysisQueue, entry)
+	if len(AnalysisQueue) > 100 {
+		AnalysisQueue = AnalysisQueue[1:]
+	}
 }
 
 func StartServer(port string) error {
@@ -51,6 +76,10 @@ func StartServer(port string) error {
 	mu.Unlock()
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		localUtils.Logger(fmt.Sprintf("[Burp -> Ping] %s %s", r.Method, r.URL.Path), 1)
+		w.Write([]byte("Autoscout Burp API Online"))
+	})
 	mux.HandleFunc("/request", handleRequest)
 	mux.HandleFunc("/response", handleResponse)
 
@@ -95,7 +124,14 @@ func StopServer() {
 }
 
 func handleRequest(w http.ResponseWriter, r *http.Request) {
+	localUtils.Logger("[DEBUG] Received request on /request", 3)
+
+	mu.Lock()
+	RequestsIntercepted++
+	mu.Unlock()
+
 	if r.Method != http.MethodPost {
+		localUtils.Logger("[DEBUG] Method not allowed", 3)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
@@ -115,12 +151,23 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 	decodedBody, _ := base64.StdEncoding.DecodeString(req.Body)
 	localUtils.Logger(fmt.Sprintf("[Burp -> Request] %s %s (%d bytes)", req.Method, req.URL, len(decodedBody)), 1)
 
-	// Here you would pass the request to the AI Fleet or other analyzers
-	// For now, we just pass it back unmodified
-	
+	// Add to Analysis UI
+	addAnalysis(fmt.Sprintf("REQ: %s %s (%d bytes)", req.Method, req.URL, len(decodedBody)))
+
+	// DEMO: AI Modification Loop
+	modified := false
+	newBody := req.Body
+	if strings.Contains(strings.ToLower(string(decodedBody)), "fuzz-me") {
+		localUtils.Logger("[AI] Detected 'fuzz-me' keyword. Modifying request...", 1)
+		fuzzed := strings.ReplaceAll(string(decodedBody), "fuzz-me", "AUTOSCOUT-FUZZED")
+		newBody = base64.StdEncoding.EncodeToString([]byte(fuzzed))
+		modified = true
+		addAnalysis("AI: Modified request body (keyword 'fuzz-me' detected)")
+	}
+
 	resp := BurpModified{
-		Modified: false,
-		Body:     req.Body,
+		Modified: modified,
+		Body:     newBody,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -128,6 +175,10 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleResponse(w http.ResponseWriter, r *http.Request) {
+	mu.Lock()
+	ResponsesIntercepted++
+	mu.Unlock()
+
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -148,8 +199,15 @@ func handleResponse(w http.ResponseWriter, r *http.Request) {
 	decodedBody, _ := base64.StdEncoding.DecodeString(resp.Body)
 	localUtils.Logger(fmt.Sprintf("[Burp -> Response] Status %d (%d bytes)", resp.Status, len(decodedBody)), 1)
 
-	// Analyzer logic here
-	
+	// Add to Analysis UI
+	addAnalysis(fmt.Sprintf("RES: Status %d (%d bytes)", resp.Status, len(decodedBody)))
+
+	// DEMO: AI Analysis Loop
+	if strings.Contains(strings.ToLower(string(decodedBody)), "admin") {
+		localUtils.Logger("[AI] Found 'admin' in response. Flagging for review.", 1)
+		addAnalysis("AI ALERT: 'admin' keyword detected in response body!")
+	}
+
 	modResp := BurpModified{
 		Modified: false,
 		Body:     resp.Body,
