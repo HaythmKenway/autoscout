@@ -85,6 +85,14 @@ func CheckTables() {
 		localUtils.CheckError(err)
 		return
 	}
+	if err := createVulnerabilitiesTable(db); err != nil {
+		localUtils.CheckError(err)
+		return
+	}
+	if err := createFuzzingResultsTable(db); err != nil {
+		localUtils.CheckError(err)
+		return
+	}
 
 	// --- 2. New Workflow Tables ---
 	if err := createProcFuncsTable(db); err != nil {

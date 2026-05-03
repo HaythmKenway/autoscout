@@ -29,6 +29,7 @@ type dashboardModel struct {
 	burp_resps   int
 	burp_queue   []string
 	burp_port    string
+	workQueue    chan burp.BurpRequest
 	viewport     viewport.Model
 	ready       bool
 	logPath     string
@@ -48,7 +49,7 @@ func (m dashboardModel) Init() tea.Cmd {
 	return tickEvery()
 }
 
-func NewDashboardModel(w int, h int, port string) dashboardModel {
+func NewDashboardModel(w int, h int, port string, workQueue chan burp.BurpRequest) dashboardModel {
 	home, _ := os.UserHomeDir()
 	logPath := filepath.Join(home, ".autoscout", "go.log")
 
@@ -63,6 +64,7 @@ func NewDashboardModel(w int, h int, port string) dashboardModel {
 		theme:       ModernTheme,
 		burp_status: burp.IsRunning(),
 		burp_port:   port,
+		workQueue:   workQueue,
 	}
 }
 
@@ -73,10 +75,10 @@ func runScheduler(status bool) tea.Cmd {
 	}
 }
 
-func toggleBurp(status bool, port string) tea.Cmd {
+func toggleBurp(status bool, port string, workQueue chan burp.BurpRequest) tea.Cmd {
 	return func() tea.Msg {
 		if status {
-			burp.StartServer(port)
+			burp.StartServer(port, workQueue)
 		} else {
 			burp.StopServer()
 		}
@@ -102,7 +104,7 @@ func (m dashboardModel) Update(msg tea.Msg) (dashboardModel, tea.Cmd) {
 			cmds = append(cmds, runScheduler(m.app_status))
 		case "b":
 			m.burp_status = !m.burp_status
-			cmds = append(cmds, toggleBurp(m.burp_status, m.burp_port))
+			cmds = append(cmds, toggleBurp(m.burp_status, m.burp_port, m.workQueue))
 		}
 
 	case TickMsg:

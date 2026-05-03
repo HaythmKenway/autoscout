@@ -6,6 +6,7 @@ import (
 
 	"golang.org/x/term"
 
+	"github.com/HaythmKenway/autoscout/pkg/burp"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/ssh"
@@ -128,7 +129,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				if m.zm.Get(m.dashboardModel.dialog.id+"ToggleBurp").InBounds(msg) {
 					m.dashboardModel.burp_status = !m.dashboardModel.burp_status
-					cmds = append(cmds, toggleBurp(m.dashboardModel.burp_status, m.dashboardModel.burp_port))
+					cmds = append(cmds, toggleBurp(m.dashboardModel.burp_status, m.dashboardModel.burp_port, m.dashboardModel.workQueue))
 				}
 			}
 		}
@@ -251,7 +252,7 @@ func (m model) View() string {
 	return m.zm.Scan(lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel))
 }
 
-func LoadGui(port string) error {
+func LoadGui(port string, workQueue chan burp.BurpRequest) error {
 	w, h := getTerminalSize()
 	zm := zone.New() // Create a local manager
 	
@@ -271,7 +272,7 @@ func LoadGui(port string) error {
 	rightWidth := w - leftWidth - 1
 
 	m.settingsModel = NewSettingsModel(rightWidth, h-2)
-	m.dashboardModel = NewDashboardModel(rightWidth, h-2, port)
+	m.dashboardModel = NewDashboardModel(rightWidth, h-2, port, workQueue)
 	m.targetModel = NewTargetModel(rightWidth, h-2)
 	m.analysisModel = NewAnalysisModel(rightWidth, h-2)
 
@@ -306,7 +307,7 @@ func SShHandler(s ssh.Session) (tea.Model, []tea.ProgramOption) {
 	rightWidth := w - leftWidth - 1
 
 	m.settingsModel = NewSettingsModel(rightWidth, h-2)
-	m.dashboardModel = NewDashboardModel(rightWidth, h-2, "8081")
+	m.dashboardModel = NewDashboardModel(rightWidth, h-2, "8081", nil)
 	m.targetModel = NewTargetModel(rightWidth, h-2)
 	m.analysisModel = NewAnalysisModel(rightWidth, h-2)
 	

@@ -53,6 +53,9 @@ var (
 
 	// Analysis Feed
 	AnalysisQueue []string
+
+	// Orchestrator integration
+	WorkQueue chan BurpRequest
 )
 
 func IsRunning() bool {
@@ -78,7 +81,7 @@ func addAnalysis(entry string) {
 	}
 }
 
-func StartServer(port string) error {
+func StartServer(port string, workQueue chan BurpRequest) error {
 	mu.Lock()
 	if running {
 		mu.Unlock()
@@ -86,6 +89,8 @@ func StartServer(port string) error {
 	}
 	// Don't set running=true yet, wait for successful listen or at least attempt
 	mu.Unlock()
+
+	WorkQueue = workQueue
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -174,6 +179,11 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	decodedBody, _ := base64.StdEncoding.DecodeString(req.Body)
 	localUtils.Logger(fmt.Sprintf("[Burp -> %s] %s %s (%d bytes)", req.Tool, req.Method, req.URL, len(decodedBody)), 1)
+
+	// Send to AI Orchestrator
+	if WorkQueue != nil {
+		WorkQueue <- req
+	}
 
 	// --- AI Heuristic Routing ---
 	if !isStaticAsset(req.URL) {
@@ -283,6 +293,16 @@ func handleManual(w http.ResponseWriter, r *http.Request) {
 	addAnalysis("CRITICAL: Received Manual Investigation Task!")
 	addAnalysis(fmt.Sprintf("TARGET: %s %s", req.Method, req.URL))
 	
+	// Send to Orchestrator as a normal request but maybe we should flag it as high priority later
+	if WorkQueue != nil {
+		WorkQueue <- BurpRequest{
+			URL: req.URL,
+			Method: req.Method,
+			Tool: req.Tool,
+			Body: req.RequestBody,
+		}
+	}
+
 	if req.Status > 0 {
 		addAnalysis(fmt.Sprintf("STATUS: %d", req.Status))
 	}

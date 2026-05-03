@@ -14,7 +14,9 @@ import (
 	"github.com/HaythmKenway/autoscout/internal/controller"
 	"github.com/HaythmKenway/autoscout/internal/db"
 	"github.com/HaythmKenway/autoscout/internal/scheduler"
+	"github.com/HaythmKenway/autoscout/pkg/ai"
 	"github.com/HaythmKenway/autoscout/pkg/burp"
+	"github.com/HaythmKenway/autoscout/pkg/orchestrator"
 	gui_module "github.com/HaythmKenway/autoscout/pkg/gui"
 	"github.com/HaythmKenway/autoscout/pkg/httpx"
 	"github.com/HaythmKenway/autoscout/pkg/localUtils"
@@ -45,8 +47,13 @@ func main() {
 
 	controller.Init()
 
+	// Initialize AI Fleet (Ollama)
+	ollama := ai.NewOllamaBackend("", "llama3")
+	orch := orchestrator.NewOrchestrator(ollama)
+	go orch.Start()
+
 	if *burpMode {
-		go burp.StartServer(*burpPort)
+		go burp.StartServer(*burpPort, orch.Requests)
 	}
 
 	if *sshMode {
@@ -86,7 +93,7 @@ func main() {
 	}
 
 	if *gui {
-		if err := gui_module.LoadGui(*burpPort); err != nil {
+		if err := gui_module.LoadGui(*burpPort, orch.Requests); err != nil {
 			localUtils.Logger(fmt.Sprintf("GUI failed: %v", err), 2)
 			fmt.Printf("Error starting GUI: %v\n", err)
 		}
