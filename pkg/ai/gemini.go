@@ -41,6 +41,11 @@ URL: %s
 Source: %s
 Body: %s
 
+### Rules for Tool Selection:
+1. **API/GraphQL**: If the URL contains '/api/' or 'graphql', DO NOT use web crawlers (gospider, katana). Use nuclei or ffuf instead.
+2. **Parameters**: If parameters are detected, use dalfox (for XSS) or sqlmap (for SQLi).
+3. **Censys**: Only use if you see an IP address or want to check for exposed services on a new domain.
+
 Identify risks like SQLi, XSS, SSRF, IDOR, or Auth Bypass.
 Output ONLY a JSON object with this exact structure:
 {
