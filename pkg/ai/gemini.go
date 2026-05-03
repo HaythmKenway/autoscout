@@ -58,6 +58,8 @@ Body: %s
 
 ### Instructions:
 1. **Analyze Request**: Carefully inspect headers and the body for sensitive data or injection points. Check for interesting headers like Authorization, Cookies, or custom headers. Use the provided "User Training" to guide your analysis.
+   - **Selective Fuzzing**: If the request is a simple GET with no parameters, or a POST with a static/irrelevant body, DO NOT trigger parameter fuzzing (ffuf, dalfox with parameters) unless there's a specific reason. Avoid "waste of time" scans on obviously static endpoints.
+   - **GraphQL/API**: Prioritize targeted checks for these endpoints rather than generic fuzzing.
 2. **Rules for Tool Selection**:
    - API/GraphQL: If the URL contains '/api/' or 'graphql', DO NOT use web crawlers. Use nuclei or ffuf instead.
    - Parameters: If parameters are detected, use dalfox or sqlmap.

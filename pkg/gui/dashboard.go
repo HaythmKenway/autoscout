@@ -17,6 +17,7 @@ import (
 	"github.com/HaythmKenway/autoscout/internal/db"
 	scheduler "github.com/HaythmKenway/autoscout/internal/scheduler"
 	"github.com/HaythmKenway/autoscout/pkg/burp"
+	"github.com/HaythmKenway/autoscout/pkg/tools"
 )
 
 type TickMsg time.Time
@@ -35,6 +36,8 @@ type dashboardModel struct {
 	logPath     string
 	theme       Theme
 	stats       db.Stats
+	activeJobs  []*tools.Job
+	selectedJob int
 }
 
 type dialog struct {
@@ -105,6 +108,19 @@ func (m dashboardModel) Update(msg tea.Msg) (dashboardModel, tea.Cmd) {
 		case "b":
 			m.burp_status = !m.burp_status
 			cmds = append(cmds, toggleBurp(m.burp_status, m.burp_port, m.workQueue))
+		case "up":
+			if m.selectedJob > 0 {
+				m.selectedJob--
+			}
+		case "down":
+			if m.selectedJob < len(m.activeJobs)-1 {
+				m.selectedJob++
+			}
+		case "x": // Kill selected job
+			if len(m.activeJobs) > 0 {
+				job := m.activeJobs[m.selectedJob]
+				tools.DefaultJobManager.StopJob(job.ID)
+			}
 		}
 
 	case TickMsg:
@@ -113,6 +129,10 @@ func (m dashboardModel) Update(msg tea.Msg) (dashboardModel, tea.Cmd) {
 		}
 		m.burp_status = burp.IsRunning()
 		m.burp_reqs, m.burp_resps, m.burp_queue = burp.GetStats()
+		m.activeJobs = tools.DefaultJobManager.ListJobs()
+		if m.selectedJob >= len(m.activeJobs) {
+			m.selectedJob = 0
+		}
 		content := getFormattedLogsTailSafe(m.logPath, 20)
 		m.viewport.SetContent(content)
 		m.viewport.GotoBottom()
@@ -180,6 +200,31 @@ func (m dashboardModel) View(zm *zone.Manager) string {
 
 	stats := fmt.Sprintf("Targets: %d | Subdomains: %d | Alive URLs: %d", m.stats.Targets, m.stats.Subs, m.stats.URLs)
 
+	// 3. Jobs Panel
+	jobsTitle := lipgloss.NewStyle().Foreground(lipgloss.Color("5")).Bold(true).Render("--- ACTIVE JOBS (Press 'x' to Kill) ---")
+	var jobsView string
+	if len(m.activeJobs) == 0 {
+		jobsView = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render(" No background jobs running...")
+	} else {
+		var rows []string
+		for i, job := range m.activeJobs {
+			prefix := "  "
+			style := lipgloss.NewStyle()
+			if i == m.selectedJob {
+				prefix = "> "
+				style = style.Background(lipgloss.Color("5")).Foreground(lipgloss.Color("#FFFFFF"))
+			}
+			
+			elapsed := time.Since(job.StartTime).Round(time.Second)
+			// Simple running bar using glyphs
+			runningBar := strings.Repeat("▓", (int(elapsed.Seconds())%5)+1)
+			
+			row := fmt.Sprintf("%s[%-8s] %-15s %s (%s)", prefix, job.Tool, job.ID, runningBar, elapsed)
+			rows = append(rows, style.Render(row))
+		}
+		jobsView = strings.Join(rows, "\n")
+	}
+
 	logTitle := lipgloss.NewStyle().
 		Foreground(m.theme.Accent).
 		Bold(true).
@@ -187,7 +232,7 @@ func (m dashboardModel) View(zm *zone.Manager) string {
 
 	help := lipgloss.NewStyle().
 		Foreground(m.theme.InactiveTabFG).
-		Render(" [s] Scanner   [b] Burp API   [1-4] Tabs   [tab] Panels   [q] Quit")
+		Render(" [s] Scanner   [b] Burp API   [x] Kill Job   [up/down] Select   [q] Quit")
 
 	return lipgloss.JoinVertical(lipgloss.Left,
 		lipgloss.JoinHorizontal(lipgloss.Top, header, lipgloss.NewStyle().Width(5).Render(""), btn),
@@ -196,6 +241,9 @@ func (m dashboardModel) View(zm *zone.Manager) string {
 		lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Render(burpStats),
 		"",
 		lipgloss.NewStyle().Foreground(m.theme.Highlight).Render(stats),
+		"",
+		jobsTitle,
+		jobsView,
 		"",
 		logTitle,
 		m.viewport.View(),

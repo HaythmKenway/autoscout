@@ -16,7 +16,10 @@ import (
 )
 
 // runWithLogs starts a command and streams its output to the global logger in real-time
-func runWithLogs(toolName string, cmd *exec.Cmd, onComplete func(string)) {
+func runWithLogs(toolName string, target string, cmd *exec.Cmd, onComplete func(string)) {
+	jobID := DefaultJobManager.Register(toolName, target, cmd)
+	defer DefaultJobManager.Unregister(jobID)
+
 	stdout, _ := cmd.StdoutPipe()
 	stderr, _ := cmd.StderrPipe()
 	
@@ -76,7 +79,7 @@ func RunDalfox(target string, method string, body string, headers map[string]str
 
 	cmd := exec.Command("dalfox", args...)
 	
-	runWithLogs("DalFox", cmd, func(output string) {
+	runWithLogs("DalFox", target, cmd, func(output string) {
 		lines := strings.Split(output, "\n")
 		database, _ := db.OpenDatabase()
 		defer database.Close()
@@ -112,7 +115,7 @@ func RunSQLMap(targetURL string, rawRequest string) {
 	}
 	cmd := exec.Command("sqlmap", args...)
 	
-	runWithLogs("SQLMap", cmd, func(output string) {
+	runWithLogs("SQLMap", targetURL, cmd, func(output string) {
 		if strings.Contains(output, "is vulnerable") {
 			database, _ := db.OpenDatabase()
 			defer database.Close()
@@ -138,7 +141,7 @@ func RunNuclei(target string, tags string, rateLimit string) {
 	}
 
 	cmd := exec.Command("nuclei", args...)
-	runWithLogs("Nuclei", cmd, nil)
+	runWithLogs("Nuclei", target, cmd, nil)
 }
 
 func getWordlist() string {
@@ -204,7 +207,7 @@ func RunFFUF(target string, method string, body string, headers map[string]strin
 	}
 
 	cmd := exec.Command("ffuf", args...)
-	runWithLogs("FFUF", cmd, func(output string) {
+	runWithLogs("FFUF", target, cmd, func(output string) {
 		lines := strings.Split(output, "\n")
 		database, _ := db.OpenDatabase()
 		defer database.Close()
@@ -230,7 +233,7 @@ func RunArjun(target string, method string, body string, headers map[string]stri
 		args = append(args, "--headers", fmt.Sprintf("%s: %s", k, v))
 	}
 	cmd := exec.Command("arjun", args...)
-	runWithLogs("Arjun", cmd, nil)
+	runWithLogs("Arjun", target, cmd, nil)
 }
 
 func RunGoSpider(target string, rateLimit string) {
@@ -241,7 +244,7 @@ func RunGoSpider(target string, rateLimit string) {
 		args = append(args, "-c", rateLimit) // GoSpider uses -c for concurrency/rate
 	}
 	cmd := exec.Command("gospider", args...)
-	runWithLogs("GoSpider", cmd, nil)
+	runWithLogs("GoSpider", target, cmd, nil)
 }
 
 func RunKatana(target string, rateLimit string) {
@@ -253,7 +256,7 @@ func RunKatana(target string, rateLimit string) {
 	}
 	cmd := exec.Command("katana", args...)
 	
-	runWithLogs("Katana", cmd, func(output string) {
+	runWithLogs("Katana", target, cmd, func(output string) {
 		database, _ := db.OpenDatabase()
 		defer database.Close()
 		endpoints := strings.Split(output, "\n")
@@ -264,5 +267,5 @@ func RunKatana(target string, rateLimit string) {
 func RunCensys(target string) {
 	localUtils.Logger(fmt.Sprintf("[Tool] Starting Censys search: %s", target), 1)
 	cmd := exec.Command("censys", "search", target)
-	runWithLogs("Censys", cmd, nil)
+	runWithLogs("Censys", target, cmd, nil)
 }
