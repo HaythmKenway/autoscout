@@ -128,7 +128,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				if m.zm.Get(m.dashboardModel.dialog.id+"ToggleBurp").InBounds(msg) {
 					m.dashboardModel.burp_status = !m.dashboardModel.burp_status
-					cmds = append(cmds, toggleBurp(m.dashboardModel.burp_status))
+					cmds = append(cmds, toggleBurp(m.dashboardModel.burp_status, m.dashboardModel.burp_port))
 				}
 			}
 		}
@@ -251,7 +251,7 @@ func (m model) View() string {
 	return m.zm.Scan(lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel))
 }
 
-func LoadGui() error {
+func LoadGui(port string) error {
 	w, h := getTerminalSize()
 	zm := zone.New() // Create a local manager
 	
@@ -271,7 +271,7 @@ func LoadGui() error {
 	rightWidth := w - leftWidth - 1
 
 	m.settingsModel = NewSettingsModel(rightWidth, h-2)
-	m.dashboardModel = NewDashboardModel(rightWidth, h-2)
+	m.dashboardModel = NewDashboardModel(rightWidth, h-2, port)
 	m.targetModel = NewTargetModel(rightWidth, h-2)
 	m.analysisModel = NewAnalysisModel(rightWidth, h-2)
 
@@ -306,7 +306,7 @@ func SShHandler(s ssh.Session) (tea.Model, []tea.ProgramOption) {
 	rightWidth := w - leftWidth - 1
 
 	m.settingsModel = NewSettingsModel(rightWidth, h-2)
-	m.dashboardModel = NewDashboardModel(rightWidth, h-2)
+	m.dashboardModel = NewDashboardModel(rightWidth, h-2, "8081")
 	m.targetModel = NewTargetModel(rightWidth, h-2)
 	m.analysisModel = NewAnalysisModel(rightWidth, h-2)
 	

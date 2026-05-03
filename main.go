@@ -86,7 +86,7 @@ func main() {
 	}
 
 	if *gui {
-		if err := gui_module.LoadGui(); err != nil {
+		if err := gui_module.LoadGui(*burpPort); err != nil {
 			localUtils.Logger(fmt.Sprintf("GUI failed: %v", err), 2)
 			fmt.Printf("Error starting GUI: %v\n", err)
 		}

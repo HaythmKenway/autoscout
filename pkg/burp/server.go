@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -83,7 +84,7 @@ func StartServer(port string) error {
 		mu.Unlock()
 		return nil
 	}
-	running = true
+	// Don't set running=true yet, wait for successful listen or at least attempt
 	mu.Unlock()
 
 	mux := http.NewServeMux()
@@ -95,17 +96,28 @@ func StartServer(port string) error {
 	mux.HandleFunc("/response", handleResponse)
 	mux.HandleFunc("/manual", handleManual)
 
-	addr := fmt.Sprintf("127.0.0.1:%s", port)
+	addr := ":" + port // Listen on all interfaces
 	server = &http.Server{
 		Addr:    addr,
 		Handler: mux,
 	}
 
-	localUtils.Logger(fmt.Sprintf("Starting Burp Integration Server on %s", addr), 1)
+	localUtils.Logger(fmt.Sprintf("Attempting to start Burp Integration Server on %s", addr), 1)
 	
+	// Create a listener first to check for port conflicts immediately
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		localUtils.Logger(fmt.Sprintf("CRITICAL: Burp Server failed to bind to %s: %v", addr, err), 2)
+		return err
+	}
+
+	mu.Lock()
+	running = true
+	mu.Unlock()
+
 	go func() {
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			localUtils.Logger(fmt.Sprintf("Burp Integration Server error: %v", err), 2)
+		if err := server.Serve(ln); err != nil && err != http.ErrServerClosed {
+			localUtils.Logger(fmt.Sprintf("Burp Integration Server runtime error: %v", err), 2)
 			mu.Lock()
 			running = false
 			mu.Unlock()
