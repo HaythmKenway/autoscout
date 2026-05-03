@@ -12,10 +12,9 @@ public class AutoscoutExtension implements BurpExtension {
         AutoscoutTab uiTab = new AutoscoutTab(api);
         api.userInterface().registerSuiteTab("Autoscout", uiTab.getUiComponent());
 
-        // Proxy Handler
-        AutoscoutProxyHandler proxyHandler = new AutoscoutProxyHandler(api, uiTab);
-        api.proxy().registerRequestHandler(proxyHandler);
-        api.proxy().registerResponseHandler(proxyHandler);
+        // Http Handler (Handles Proxy, Repeater, Intruder, etc.)
+        AutoscoutHttpHandler httpHandler = new AutoscoutHttpHandler(api, uiTab);
+        api.http().registerHttpHandler(httpHandler);
 
         api.logging().logToOutput("Autoscout Burp Integration loaded successfully.");
     }

@@ -113,7 +113,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	decodedBody, _ := base64.StdEncoding.DecodeString(req.Body)
-	localUtils.Logger(fmt.Sprintf("[Burp -> Autoscout] Intercepted Request: %s %s (Body: %d bytes)", req.Method, req.URL, len(decodedBody)), 3)
+	localUtils.Logger(fmt.Sprintf("[Burp -> Request] %s %s (%d bytes)", req.Method, req.URL, len(decodedBody)), 1)
 
 	// Here you would pass the request to the AI Fleet or other analyzers
 	// For now, we just pass it back unmodified
@@ -146,7 +146,7 @@ func handleResponse(w http.ResponseWriter, r *http.Request) {
 	}
 
 	decodedBody, _ := base64.StdEncoding.DecodeString(resp.Body)
-	localUtils.Logger(fmt.Sprintf("[Burp -> Autoscout] Intercepted Response: Status %d (Body: %d bytes)", resp.Status, len(decodedBody)), 3)
+	localUtils.Logger(fmt.Sprintf("[Burp -> Response] Status %d (%d bytes)", resp.Status, len(decodedBody)), 1)
 
 	// Analyzer logic here
 	
