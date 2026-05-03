@@ -111,9 +111,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			// Dashboard Toggle Button
-			if m.activeTab == 0 && m.zm.Get(m.dashboardModel.dialog.id+"ToggleStart").InBounds(msg) {
-				m.dashboardModel.app_status = !m.dashboardModel.app_status
-				cmds = append(cmds, runScheduler(m.dashboardModel.app_status))
+			if m.activeTab == 0 {
+				if m.zm.Get(m.dashboardModel.dialog.id+"ToggleStart").InBounds(msg) {
+					m.dashboardModel.app_status = !m.dashboardModel.app_status
+					cmds = append(cmds, runScheduler(m.dashboardModel.app_status))
+				}
+				if m.zm.Get(m.dashboardModel.dialog.id+"ToggleBurp").InBounds(msg) {
+					m.dashboardModel.burp_status = !m.dashboardModel.burp_status
+					cmds = append(cmds, toggleBurp(m.dashboardModel.burp_status))
+				}
 			}
 		}
 	}

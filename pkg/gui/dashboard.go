@@ -15,18 +15,20 @@ import (
 
 	"github.com/HaythmKenway/autoscout/internal/db"
 	scheduler "github.com/HaythmKenway/autoscout/internal/scheduler"
+	"github.com/HaythmKenway/autoscout/pkg/burp"
 )
 
 type TickMsg time.Time
 
 type dashboardModel struct {
-	dialog     dialog
-	app_status bool
-	viewport   viewport.Model
-	ready      bool
-	logPath    string
-	theme      Theme
-	stats      db.Stats
+	dialog      dialog
+	app_status  bool
+	burp_status bool
+	viewport    viewport.Model
+	ready       bool
+	logPath     string
+	theme       Theme
+	stats       db.Stats
 }
 
 type dialog struct {
@@ -45,21 +47,33 @@ func NewDashboardModel(w int, h int) dashboardModel {
 	home, _ := os.UserHomeDir()
 	logPath := filepath.Join(home, ".autoscout", "go.log")
 
-	vp := viewport.New(w, h-12)
+	vp := viewport.New(w, h-14)
 	vp.SetContent("Waiting for system events...")
 
 	return dashboardModel{
-		dialog:   dialog{width: w, height: h, id: "dash"},
-		logPath:  logPath,
-		viewport: vp,
-		ready:    true,
-		theme:    ModernTheme,
+		dialog:      dialog{width: w, height: h, id: "dash"},
+		logPath:     logPath,
+		viewport:    vp,
+		ready:       true,
+		theme:       ModernTheme,
+		burp_status: burp.IsRunning(),
 	}
 }
 
 func runScheduler(status bool) tea.Cmd {
 	return func() tea.Msg {
 		scheduler.Skibbidi(status)
+		return nil
+	}
+}
+
+func toggleBurp(status bool) tea.Cmd {
+	return func() tea.Msg {
+		if status {
+			burp.StartServer("8081")
+		} else {
+			burp.StopServer()
+		}
 		return nil
 	}
 }
@@ -73,27 +87,23 @@ func (m dashboardModel) Update(msg tea.Msg) (dashboardModel, tea.Cmd) {
 		m.dialog.width = msg.Width
 		m.dialog.height = msg.Height
 		m.viewport.Width = msg.Width
-		m.viewport.Height = msg.Height - 12
-
-	case tea.MouseMsg:
-		// We handle mouse clicks in the root model using zone.Get
-		// But we need to make sure the coordinates are right.
-		// Actually, let's just keep the logic in the root model.
+		m.viewport.Height = msg.Height - 14
 
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "s":
 			m.app_status = !m.app_status
 			cmds = append(cmds, runScheduler(m.app_status))
+		case "b":
+			m.burp_status = !m.burp_status
+			cmds = append(cmds, toggleBurp(m.burp_status))
 		}
 
 	case TickMsg:
-		// Refresh stats with error handling to prevent UI freeze
 		if s, err := db.GetStats(); err == nil {
 			m.stats = s
 		}
-		
-		// Robust log tailing
+		m.burp_status = burp.IsRunning()
 		content := getFormattedLogsTailSafe(m.logPath, 20)
 		m.viewport.SetContent(content)
 		m.viewport.GotoBottom()
@@ -111,29 +121,51 @@ func (m dashboardModel) View(zm *zone.Manager) string {
 		return "Initializing Dashboard..."
 	}
 
+	// 1. Service Status
 	statusText := "OFFLINE"
-	statusColor := lipgloss.Color("1") // Red
+	statusColor := lipgloss.Color("1")
 	if m.app_status {
 		statusText = "RUNNING"
-		statusColor = lipgloss.Color("2") // Green
+		statusColor = lipgloss.Color("2")
 	}
 
 	header := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(statusColor).
-		Render(fmt.Sprintf("SYSTEM STATUS: %s", statusText))
+		Render(fmt.Sprintf("SCANNER SERVICE: %s", statusText))
 
-	btnText := "[ START SERVICE ]"
+	btnText := "[ START SCANNER ]"
 	if m.app_status {
-		btnText = "[ STOP SERVICE ]"
+		btnText = "[ STOP SCANNER ] "
 	}
-	
-	// Use the passed manager
 	btn := zm.Mark(m.dialog.id+"ToggleStart", lipgloss.NewStyle().
 		Background(m.theme.Accent).
 		Foreground(lipgloss.Color("#FFFFFF")).
 		Padding(0, 1).
 		Render(btnText))
+
+	// 2. Burp Status
+	burpStatusText := "OFFLINE"
+	burpStatusColor := lipgloss.Color("1")
+	if m.burp_status {
+		burpStatusText = "ACTIVE"
+		burpStatusColor = lipgloss.Color("2")
+	}
+
+	burpHeader := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(burpStatusColor).
+		Render(fmt.Sprintf("BURP INTEGRATION: %s", burpStatusText))
+
+	burpBtnText := "[ START API ]"
+	if m.burp_status {
+		burpBtnText = "[ STOP API ] "
+	}
+	burpBtn := zm.Mark(m.dialog.id+"ToggleBurp", lipgloss.NewStyle().
+		Background(lipgloss.Color("6")).
+		Foreground(lipgloss.Color("#FFFFFF")).
+		Padding(0, 1).
+		Render(burpBtnText))
 
 	stats := fmt.Sprintf("Targets: %d | Subdomains: %d | Alive URLs: %d", m.stats.Targets, m.stats.Subs, m.stats.URLs)
 	
@@ -142,21 +174,19 @@ func (m dashboardModel) View(zm *zone.Manager) string {
 		Bold(true).
 		Render("--- LIVE SYSTEM FEED ---")
 	
-	// Ensure viewport doesn't overflow
-	logs := m.viewport.View()
-
 	help := lipgloss.NewStyle().
 		Foreground(m.theme.InactiveTabFG).
-		Render(" [s] Start/Stop   [1-4] Tabs   [tab] Panels   [q] Quit")
+		Render(" [s] Scanner   [b] Burp API   [1-4] Tabs   [tab] Panels   [q] Quit")
 
 	return lipgloss.JoinVertical(lipgloss.Left,
-		header,
-		btn,
+		lipgloss.JoinHorizontal(lipgloss.Top, header, lipgloss.NewStyle().Width(5).Render(""), btn),
+		"",
+		lipgloss.JoinHorizontal(lipgloss.Top, burpHeader, lipgloss.NewStyle().Width(5).Render(""), burpBtn),
 		"",
 		lipgloss.NewStyle().Foreground(m.theme.Highlight).Render(stats),
 		"",
 		logTitle,
-		logs,
+		m.viewport.View(),
 		"",
 		help,
 	)

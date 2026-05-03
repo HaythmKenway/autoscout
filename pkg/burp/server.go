@@ -1,11 +1,14 @@
 package burp
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/HaythmKenway/autoscout/pkg/localUtils"
 )
@@ -26,18 +29,69 @@ type BurpModified struct {
 	Body     string `json:"body"` // Base64 encoded
 }
 
-func StartServer(port string) {
+var (
+	mu      sync.Mutex
+	running bool
+	server  *http.Server
+)
+
+func IsRunning() bool {
+	mu.Lock()
+	defer mu.Unlock()
+	return running
+}
+
+func StartServer(port string) error {
+	mu.Lock()
+	if running {
+		mu.Unlock()
+		return nil
+	}
+	running = true
+	mu.Unlock()
+
 	mux := http.NewServeMux()
-	
 	mux.HandleFunc("/request", handleRequest)
 	mux.HandleFunc("/response", handleResponse)
 
 	addr := fmt.Sprintf("127.0.0.1:%s", port)
+	server = &http.Server{
+		Addr:    addr,
+		Handler: mux,
+	}
+
 	localUtils.Logger(fmt.Sprintf("Starting Burp Integration Server on %s", addr), 1)
 	
-	if err := http.ListenAndServe(addr, mux); err != nil {
-		localUtils.Logger(fmt.Sprintf("Burp Integration Server error: %v", err), 2)
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			localUtils.Logger(fmt.Sprintf("Burp Integration Server error: %v", err), 2)
+			mu.Lock()
+			running = false
+			mu.Unlock()
+		}
+	}()
+
+	return nil
+}
+
+func StopServer() {
+	mu.Lock()
+	defer mu.Unlock()
+
+	if !running || server == nil {
+		return
 	}
+
+	localUtils.Logger("Stopping Burp Integration Server...", 1)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(ctx); err != nil {
+		localUtils.Logger(fmt.Sprintf("Burp Server shutdown error: %v", err), 2)
+	}
+
+	running = false
+	server = nil
 }
 
 func handleRequest(w http.ResponseWriter, r *http.Request) {
