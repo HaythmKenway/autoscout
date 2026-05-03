@@ -62,7 +62,26 @@ var (
 
 	// AI Rewrite Registry (URL -> Modified Body)
 	RewriteRules map[string]string
+
+	// Analysis Cache
+	analysisCache map[string]time.Time
+	cacheMu       sync.Mutex
 )
+
+func shouldAnalyze(method, url string) bool {
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+	if analysisCache == nil {
+		analysisCache = make(map[string]time.Time)
+	}
+	key := method + ":" + url
+	last, exists := analysisCache[key]
+	if exists && time.Since(last) < 30*time.Second {
+		return false
+	}
+	analysisCache[key] = time.Now()
+	return true
+}
 
 func RegisterRewrite(url, newBody string) {
 	mu.Lock()
@@ -204,8 +223,10 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 	localUtils.Logger(fmt.Sprintf("[Burp -> %s] %s %s (%d bytes)", req.Tool, req.Method, req.URL, len(decodedBody)), 1)
 
 	// Send to AI Orchestrator
-	if WorkQueue != nil {
+	if WorkQueue != nil && shouldAnalyze(req.Method, req.URL) {
 		WorkQueue <- req
+	} else {
+		localUtils.Logger(fmt.Sprintf("[AI] Skipping redundant analysis for %s", req.URL), 1)
 	}
 
 	// Apply AI Rewrite if exists

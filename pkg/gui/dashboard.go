@@ -56,19 +56,21 @@ func NewDashboardModel(w int, h int, port string, workQueue chan burp.BurpReques
 	home, _ := os.UserHomeDir()
 	logPath := filepath.Join(home, ".autoscout", "go.log")
 
-	vp := viewport.New(w, h-14)
-	vp.SetContent("Waiting for system events...")
-
-	return dashboardModel{
+	m := dashboardModel{
 		dialog:      dialog{width: w, height: h, id: "dash"},
 		logPath:     logPath,
-		viewport:    vp,
 		ready:       true,
 		theme:       ModernTheme,
 		burp_status: burp.IsRunning(),
 		burp_port:   port,
 		workQueue:   workQueue,
 	}
+
+	m.viewport = viewport.New(w, 0)
+	m.updateViewportHeight()
+	m.viewport.SetContent("Waiting for system events...")
+
+	return m
 }
 
 func runScheduler(status bool) tea.Cmd {
@@ -97,8 +99,8 @@ func (m dashboardModel) Update(msg tea.Msg) (dashboardModel, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.dialog.width = msg.Width
 		m.dialog.height = msg.Height
-		m.viewport.Width = msg.Width
-		m.viewport.Height = msg.Height - 14
+		m.viewport.Width = msg.Width - 2 // Adjust for feedContainer borders
+		m.updateViewportHeight()
 
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -129,11 +131,24 @@ func (m dashboardModel) Update(msg tea.Msg) (dashboardModel, tea.Cmd) {
 		}
 		m.burp_status = burp.IsRunning()
 		m.burp_reqs, m.burp_resps, m.burp_queue = burp.GetStats()
-		m.activeJobs = tools.DefaultJobManager.ListJobs()
+		
+		// Sort jobs: most recent first
+		jobs := tools.DefaultJobManager.ListJobs()
+		for i := 0; i < len(jobs); i++ {
+			for j := i + 1; j < len(jobs); j++ {
+				if jobs[i].StartTime.Before(jobs[j].StartTime) {
+					jobs[i], jobs[j] = jobs[j], jobs[i]
+				}
+			}
+		}
+		m.activeJobs = jobs
+
 		if m.selectedJob >= len(m.activeJobs) {
 			m.selectedJob = 0
 		}
-		content := getFormattedLogsTailSafe(m.logPath, 20)
+		// Fetch EXACTLY the number of lines the viewport can show
+		// Use maxWidth - 4 to account for rounded border and padding
+		content := getFormattedLogsTailSafe(m.logPath, m.viewport.Height, m.viewport.Width-4)
 		m.viewport.SetContent(content)
 		m.viewport.GotoBottom()
 		return m, tickEvery()
@@ -145,12 +160,60 @@ func (m dashboardModel) Update(msg tea.Msg) (dashboardModel, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
+func (m *dashboardModel) updateViewportHeight() {
+	// Math: topRow (8) + feedHeader (2) + feedContainer border (2) + help (1) = 13 lines total overhead
+	vpHeight := m.dialog.height - 13
+	if vpHeight < 2 {
+		vpHeight = 2
+	}
+	m.viewport.Height = vpHeight
+}
+
+func (m dashboardModel) vw(p float64) int {
+	return int(float64(m.dialog.width) * p / 100.0)
+}
+
+func (m dashboardModel) vh(p float64) int {
+	return int(float64(m.dialog.height) * p / 100.0)
+}
+
 func (m dashboardModel) View(zm *zone.Manager) string {
 	if !m.ready {
 		return "Initializing Dashboard..."
 	}
 
-	// 1. Service Status
+	// 1. Calculate absolute base dimensions
+	// rightPanelTotalWidth is the space for the active jobs card (35% of total)
+	rightPanelTotalWidth := int(float64(m.dialog.width) * 0.35)
+	if rightPanelTotalWidth < 30 {
+		rightPanelTotalWidth = 30
+	}
+	// leftPanelTotalWidth is the remaining space for Services + Stats
+	leftPanelTotalWidth := m.dialog.width - rightPanelTotalWidth
+
+	// 2. Calculate card widths (subtracting 2 for borders)
+	controlsTotalWidth := leftPanelTotalWidth / 2
+	statsTotalWidth := leftPanelTotalWidth - controlsTotalWidth
+
+	controlsWidth := controlsTotalWidth - 2
+	statsWidth := statsTotalWidth - 2
+	jobsWidth := rightPanelTotalWidth - 2
+
+	// Safety clamping
+	if controlsWidth < 4 { controlsWidth = 4 }
+	if statsWidth < 4 { statsWidth = 4 }
+	if jobsWidth < 4 { jobsWidth = 4 }
+
+	accent := m.theme.Accent
+	headerStyle := lipgloss.NewStyle().Foreground(accent).Bold(true).Underline(true)
+	cardStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(m.theme.BorderColor).
+		Padding(0, 1)
+
+	topRowHeight := 8 // Total height with borders
+
+	// --- 1. Service Controls ---
 	statusText := "OFFLINE"
 	statusColor := lipgloss.Color("1")
 	if m.app_status {
@@ -158,96 +221,114 @@ func (m dashboardModel) View(zm *zone.Manager) string {
 		statusColor = lipgloss.Color("2")
 	}
 
-	header := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(statusColor).
-		Render(fmt.Sprintf("SCANNER SERVICE: %s", statusText))
-
-	btnText := "[ START SCANNER ]"
-	if m.app_status {
-		btnText = "[ STOP SCANNER ] "
-	}
-	btn := zm.Mark(m.dialog.id+"ToggleStart", lipgloss.NewStyle().
-		Background(m.theme.Accent).
-		Foreground(lipgloss.Color("#FFFFFF")).
-		Padding(0, 1).
-		Render(btnText))
-
-	// 2. Burp Status
 	burpStatusText := "OFFLINE"
 	burpStatusColor := lipgloss.Color("1")
 	if m.burp_status {
-		burpStatusText = "ACTIVE"
+		burpStatusText = "ACTIVE "
 		burpStatusColor = lipgloss.Color("2")
 	}
 
-	burpHeader := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(burpStatusColor).
-		Render(fmt.Sprintf("BURP INTEGRATION: %s", burpStatusText))
-
-	burpBtnText := "[ START API ]"
-	if m.burp_status {
-		burpBtnText = "[ STOP API ] "
+	startBtnText := " START "
+	if m.app_status {
+		startBtnText = " STOP  "
 	}
-	proxyBtn := zm.Mark(m.dialog.id+"ToggleBurp", lipgloss.NewStyle().
-		Background(lipgloss.Color("6")).
-		Foreground(lipgloss.Color("#FFFFFF")).
-		Padding(0, 1).
-		Render(burpBtnText))
+	startBtnStyle := lipgloss.NewStyle().Background(m.theme.Accent).Foreground(lipgloss.Color("#FFFFFF")).Padding(0, 1).Bold(true)
+	startBtn := zm.Mark(m.dialog.id+"ToggleStart", startBtnStyle.Render(startBtnText))
 
-	burpStats := fmt.Sprintf("Burp Intercepts: %d Req / %d Resp", m.burp_reqs, m.burp_resps)
+	burpBtnText := " START "
+	if m.burp_status {
+		burpBtnText = " STOP  "
+	}
+	burpBtnStyle := lipgloss.NewStyle().Background(lipgloss.Color("6")).Foreground(lipgloss.Color("#FFFFFF")).Padding(0, 1).Bold(true)
+	burpBtn := zm.Mark(m.dialog.id+"ToggleBurp", burpBtnStyle.Render(burpBtnText))
 
-	stats := fmt.Sprintf("Targets: %d | Subdomains: %d | Alive URLs: %d", m.stats.Targets, m.stats.Subs, m.stats.URLs)
+	controls := cardStyle.Width(controlsWidth).Height(topRowHeight - 2).Render(
+		lipgloss.JoinVertical(lipgloss.Left,
+			headerStyle.Render("SERVICES"),
+			"",
+			fmt.Sprintf("Scanner: %s", lipgloss.NewStyle().Foreground(statusColor).Bold(true).Render(statusText)),
+			startBtn,
+			fmt.Sprintf("Burp:    %s", lipgloss.NewStyle().Foreground(burpStatusColor).Bold(true).Render(burpStatusText)),
+			burpBtn,
+		),
+	)
 
-	// 3. Jobs Panel
-	jobsTitle := lipgloss.NewStyle().Foreground(lipgloss.Color("5")).Bold(true).Render("--- ACTIVE JOBS (Press 'x' to Kill) ---")
+	// --- 2. Stats ---
+	stats := cardStyle.Width(statsWidth).Height(topRowHeight - 2).Render(
+		lipgloss.JoinVertical(lipgloss.Left,
+			headerStyle.Render("STATISTICS"),
+			"",
+			fmt.Sprintf("Targets: %d", m.stats.Targets),
+			fmt.Sprintf("Subs:    %d", m.stats.Subs),
+			fmt.Sprintf("Reqs:    %d", m.burp_reqs),
+			fmt.Sprintf("Resps:   %d", m.burp_resps),
+		),
+	)
+
+	// --- 3. Active Jobs ---
 	var jobsView string
 	if len(m.activeJobs) == 0 {
-		jobsView = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render(" No background jobs running...")
+		jobsView = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true).Render("\n\n  No active tasks...")
 	} else {
 		var rows []string
-		for i, job := range m.activeJobs {
-			prefix := "  "
+		maxJobs := 4
+		for i := 0; i < len(m.activeJobs) && len(rows) < maxJobs; i++ {
+			job := m.activeJobs[i]
+			cursor := "  "
 			style := lipgloss.NewStyle()
 			if i == m.selectedJob {
-				prefix = "> "
-				style = style.Background(lipgloss.Color("5")).Foreground(lipgloss.Color("#FFFFFF"))
+				cursor = "> "
+				style = style.Foreground(m.theme.Accent).Bold(true)
 			}
-			
 			elapsed := time.Since(job.StartTime).Round(time.Second)
-			// Simple running bar using glyphs
-			runningBar := strings.Repeat("▓", (int(elapsed.Seconds())%5)+1)
-			
-			row := fmt.Sprintf("%s[%-8s] %-15s %s (%s)", prefix, job.Tool, job.ID, runningBar, elapsed)
+			row := fmt.Sprintf("%s%-8s | %s (%s)", cursor, job.Tool, job.ID, elapsed)
+			// Truncate to fit jobsWidth
+			maxLen := jobsWidth
+			if lipgloss.Width(row) > maxLen {
+				row = row[:maxLen-3] + "..."
+			}
 			rows = append(rows, style.Render(row))
 		}
-		jobsView = strings.Join(rows, "\n")
+		jobsView = "\n" + strings.Join(rows, "\n")
 	}
 
-	logTitle := lipgloss.NewStyle().
-		Foreground(m.theme.Accent).
-		Bold(true).
-		Render(fmt.Sprintf("--- SYSTEM FEED (%s) ---", m.logPath))
+	activeJobsCard := cardStyle.Width(jobsWidth).Height(topRowHeight - 2).Render(
+		lipgloss.JoinVertical(lipgloss.Left,
+			headerStyle.Render(fmt.Sprintf("ACTIVE TASKS (%d)", len(m.activeJobs))),
+			jobsView,
+		),
+	)
+
+	topRow := lipgloss.JoinHorizontal(lipgloss.Top,
+		controls,
+		stats,
+		activeJobsCard,
+	)
+
+	m.updateViewportHeight()
+
+	feedHeader := headerStyle.MarginTop(1).Render(" SYSTEM FEED ")
+
+	feedWidth := m.dialog.width - 2
+	if feedWidth < 10 { feedWidth = 10 }
+
+	feedContainer := lipgloss.NewStyle().
+		Border(lipgloss.ThickBorder()).
+		BorderForeground(m.theme.BorderColor).
+		Width(feedWidth).
+		Height(m.viewport.Height).
+		Render(m.viewport.View())
 
 	help := lipgloss.NewStyle().
 		Foreground(m.theme.InactiveTabFG).
-		Render(" [s] Scanner   [b] Burp API   [x] Kill Job   [up/down] Select   [q] Quit")
+		Height(1).
+		MaxHeight(1).
+		Render(" [s] Scanner  [b] Burp API  [x] Kill Task  [↑/↓] Select  [q] Exit")
 
 	return lipgloss.JoinVertical(lipgloss.Left,
-		lipgloss.JoinHorizontal(lipgloss.Top, header, lipgloss.NewStyle().Width(5).Render(""), btn),
-		"",
-		lipgloss.JoinHorizontal(lipgloss.Top, burpHeader, lipgloss.NewStyle().Width(5).Render(""), proxyBtn),
-		lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Render(burpStats),
-		"",
-		lipgloss.NewStyle().Foreground(m.theme.Highlight).Render(stats),
-		"",
-		jobsTitle,
-		jobsView,
-		"",
-		logTitle,
-		m.viewport.View(),
-		"",
+		topRow,
+		feedHeader,
+		feedContainer,
 		help,
 	)
 }
@@ -258,8 +339,7 @@ func tickEvery() tea.Cmd {
 	})
 }
 
-// Ultra-robust log tailing
-func getFormattedLogsTailSafe(path string, maxLines int) string {
+func getFormattedLogsTailSafe(path string, maxLines int, maxWidth int) string {
 	file, err := os.Open(path)
 	if err != nil {
 		return "Waiting for logs..."
@@ -271,7 +351,6 @@ func getFormattedLogsTailSafe(path string, maxLines int) string {
 		return "Log feed empty..."
 	}
 
-	// Tail the last 32KB
 	chunkSize := int64(32768)
 	offset := stat.Size() - chunkSize
 	if offset < 0 {
@@ -288,7 +367,6 @@ func getFormattedLogsTailSafe(path string, maxLines int) string {
 	raw := string(buf)
 	lines := strings.Split(raw, "\n")
 
-	// Only discard the first line if we jumped into the middle of the file
 	if offset > 0 && len(lines) > 1 {
 		lines = lines[1:]
 	}
@@ -300,23 +378,28 @@ func getFormattedLogsTailSafe(path string, maxLines int) string {
 			continue
 		}
 
-		// Subtle colorization
+		style := lipgloss.NewStyle()
 		if strings.Contains(clean, "ERRO") || strings.Contains(clean, "CRIT") {
-			clean = lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Render(clean)
+			style = style.Foreground(lipgloss.Color("1"))
 		} else if strings.Contains(clean, "ALER") {
-			clean = lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Render(clean)
+			style = style.Foreground(lipgloss.Color("3"))
 		} else if strings.Contains(clean, "INFO") {
-			clean = lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Render(clean)
+			style = style.Foreground(lipgloss.Color("6"))
 		}
 
-		filtered = append(filtered, clean)
+		displayLine := clean
+		if maxWidth > 0 && len(clean) > maxWidth {
+			displayLine = clean[:maxWidth-3] + "..."
+		}
+
+		filtered = append(filtered, style.Render(displayLine))
 	}
 
 	if len(filtered) == 0 {
 		return "Scanning log feed..."
 	}
 
-	if len(filtered) > maxLines {
+	if len(filtered) > maxLines && maxLines > 0 {
 		filtered = filtered[len(filtered)-maxLines:]
 	}
 

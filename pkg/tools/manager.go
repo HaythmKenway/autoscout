@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os/exec"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -18,15 +19,27 @@ type Job struct {
 type JobManager struct {
 	mu   sync.RWMutex
 	jobs map[string]*Job
+	sem  chan struct{}
 }
 
 var DefaultJobManager = &JobManager{
 	jobs: make(map[string]*Job),
+	sem:  make(chan struct{}, 5), // Limit to 5 concurrent tools
 }
 
 func (m *JobManager) Register(tool, target string, cmd *exec.Cmd) string {
+	// Wait for slot in semaphore
+	m.sem <- struct{}{}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	// Ensure the command starts in its own process group
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	} else {
+		cmd.SysProcAttr.Setpgid = true
+	}
 
 	// Use a shorter, more readable ID for UI
 	id := fmt.Sprintf("%s-%d", tool, time.Now().Unix()%10000)
@@ -43,8 +56,11 @@ func (m *JobManager) Register(tool, target string, cmd *exec.Cmd) string {
 
 func (m *JobManager) Unregister(id string) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	delete(m.jobs, id)
+	m.mu.Unlock()
+
+	// Release slot in semaphore
+	<-m.sem
 }
 
 func (m *JobManager) StopJob(id string) error {
@@ -57,7 +73,8 @@ func (m *JobManager) StopJob(id string) error {
 	}
 
 	if job.Cmd != nil && job.Cmd.Process != nil {
-		return job.Cmd.Process.Kill()
+		// Kill the entire process group (negative PID)
+		return syscall.Kill(-job.Cmd.Process.Pid, syscall.SIGKILL)
 	}
 	return nil
 }

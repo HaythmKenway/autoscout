@@ -25,6 +25,7 @@ type AIPlan struct {
 // AIAgent is the interface for different AI providers (Ollama, Gemini, etc.)
 type AIAgent interface {
 	Analyze(req burp.BurpRequest) (*AIPlan, error)
+	Name() string
 }
 
 // LoadKnowledge reads the custom user knowledge/training file
@@ -51,7 +52,7 @@ func LoadBackend() AIAgent {
 	settingsPath := os.ExpandEnv("$HOME/.config/autoscout/user-config.yaml")
 	data, err := os.ReadFile(settingsPath)
 
-	agentType := "Ollama" // Default
+	agentType := "Codex" // Default
 	if err == nil {
 		var config struct {
 			Settings struct {
@@ -64,14 +65,14 @@ func LoadBackend() AIAgent {
 		}
 	}
 
-	if agentType == "Gemini" {
-		return NewGeminiBackend("", "gemini-1.5-flash")
-	}
-
 	if agentType == "Codex" {
 		return NewCodexBackend("")
 	}
 
-	// Default to Ollama with the confirmed working model
-	return NewOllamaBackend("", "llama3.2:latest")
+	if agentType == "Gemini" {
+		return NewGeminiBackend("", "gemini-1.5-flash")
+	}
+
+	// Default to Codex if nothing else matches or is specified
+	return NewCodexBackend("")
 }

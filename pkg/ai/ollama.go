@@ -38,6 +38,10 @@ func NewOllamaBackend(baseURL, model string) *OllamaBackend {
 	return &OllamaBackend{BaseURL: baseURL, Model: model}
 }
 
+func (o *OllamaBackend) Name() string {
+	return "Ollama (" + o.Model + ")"
+}
+
 func (o *OllamaBackend) Analyze(req burp.BurpRequest) (*AIPlan, error) {
 	decodedBody, _ := base64.StdEncoding.DecodeString(req.Body)
 	bodyStr := string(decodedBody)
@@ -58,28 +62,24 @@ Body: %s
 
 ### User Training & Expertise:
 %s
-
 ### Instructions:
-1. **Analyze Request**: Carefully inspect headers and the body for sensitive data, injection points, or complex logic. Check for interesting headers like Authorization, Cookies, or custom headers. Use the provided "User Training" to guide your analysis.
-   - **Selective Fuzzing**: If the request is a simple GET with no parameters, or a POST with a static/irrelevant body, DO NOT trigger parameter fuzzing (ffuf, dalfox with parameters) unless there's a specific reason. Avoid "waste of time" scans on obviously static endpoints.
-   - **GraphQL/API**: Prioritize targeted checks for these endpoints rather than generic fuzzing.
-2. **Rules for Tool Selection**:
-   - API/GraphQL: If the URL contains '/api/' or 'graphql', DO NOT use web crawlers (gospider, katana). Use nuclei or ffuf instead.
-   - Parameters: If parameters are detected, use dalfox (for XSS) or sqlmap (for SQLi).
-   - Censys: Only use if you see an IP address or want to check for exposed services on a new domain.
+1. **Analyze Request**: Carefully inspect headers and the body for sensitive data, injection points, or complex logic.
+   - **STRICT NO-FUZZ RULE**: DO NOT trigger fuzzing tools (ffuf, dalfox, sqlmap) on static assets (.js, .css, .png, etc.) or simple informational GET requests with no parameters.
+   - **BODY ANALYSIS**: If the request is a POST, you MUST find actual user-controlled data in the body before suggesting a tool. If the body is empty or static JSON/XML with no user input, SKIP fuzzing.
+   - **GraphQL/API**: Only perform targeted scans if you see complex queries or potential for BOLA/IDOR. Avoid generic wordlist fuzzing on established APIs unless necessary.
 
-3. **Stealth and Rate Limiting**:
-   - ALWAYS include a "rate_limit" parameter in "params" for high-volume tools (ffuf, katana, gospider, nuclei).
-   - If the target is a major platform (e.g., reddit, google, github), set "rate_limit" to a low value (e.g., 5-10 requests per second) to avoid blocking.
-   - Example for FFUF on a sensitive target: {"tool": "ffuf", "target": "URL", "params": {"rate_limit": "5"}}
+2. **Stealth and Rate Limiting**:
+   - YOU MUST include a "rate_limit" parameter in "params" for high-volume tools (ffuf, katana, gospider, nuclei).
+   - FAILURE to provide a rate limit will result in system blocks. Use "5" as a standard safe value.
 
-4. **Output Format**: Provide your analysis in STRICT JSON format with these keys:
-   - thinking: A detailed, step-by-step reasoning of your analysis. Explain WHY you suspect certain bugs.
-   - vulnerabilities_suspected: [list of strings]
-   - actions: [list of {"tool": "toolname", "target": "url", "params": {"key": "val"}}]
-   - rewrite_rules: [list of strings for future modifications]
-
-Only output the JSON object. No preamble.`, req.Method, req.URL, req.Tool, string(headersJSON), bodyStr, userKnowledge)
+3. **Output Format**: Provide your analysis in STRICT JSON format with the following structure:
+   {
+     "thinking": "detailed reasoning",
+     "vulnerabilities_suspected": ["type1", "type2"],
+     "actions": [{"tool": "toolname", "target": "url", "params": {"key": "val"}}],
+     "rewrite_rules": ["modified_body_base64"]
+   }
+   Only output the JSON object. No preamble.`, req.Method, req.URL, req.Tool, string(headersJSON), bodyStr, userKnowledge)
 
 	ollamaReq := ollamaRequest{
 		Model:  o.Model,

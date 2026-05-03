@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/HaythmKenway/autoscout/pkg/ai"
 	"github.com/HaythmKenway/autoscout/pkg/burp"
@@ -13,14 +15,17 @@ import (
 )
 
 type Orchestrator struct {
-	Agent    ai.AIAgent
-	Requests chan burp.BurpRequest
+	Agent     ai.AIAgent
+	Requests  chan burp.BurpRequest
+	history   map[string]time.Time
+	historyMu sync.Mutex
 }
 
 func NewOrchestrator(agent ai.AIAgent) *Orchestrator {
 	return &Orchestrator{
 		Agent:    agent,
 		Requests: make(chan burp.BurpRequest, 100),
+		history:  make(map[string]time.Time),
 	}
 }
 
@@ -31,31 +36,56 @@ func (o *Orchestrator) Start() {
 	}
 }
 
+func (o *Orchestrator) shouldRun(tool, target string) bool {
+	o.historyMu.Lock()
+	defer o.historyMu.Unlock()
+
+	key := fmt.Sprintf("%s:%s", tool, target)
+	lastRun, exists := o.history[key]
+	if exists && time.Since(lastRun) < 5*time.Minute {
+		return false
+	}
+	o.history[key] = time.Now()
+	return true
+}
+
 func (o *Orchestrator) processRequest(req burp.BurpRequest) {
-	localUtils.Logger(fmt.Sprintf("[Plan Agent] Analyzing request: %s", req.URL), 1)
+	agentName := o.Agent.Name()
+	localUtils.Logger(fmt.Sprintf("[%s Agent] Analyzing request: %s", agentName, req.URL), 1)
 	
 	decodedBody, _ := base64.StdEncoding.DecodeString(req.Body)
 	bodyStr := string(decodedBody)
 
 	plan, err := o.Agent.Analyze(req)
 	if err != nil {
-		localUtils.Logger(fmt.Sprintf("[Plan Agent] Analysis failed: %v", err), 2)
+		localUtils.Logger(fmt.Sprintf("[%s Agent] Analysis failed: %v", agentName, err), 2)
 		return
 	}
 
 	// Log AI Thinking
 	if plan.Thinking != "" {
-		addAnalysis(fmt.Sprintf("AI THINKING: %s", plan.Thinking))
+		addAnalysis(fmt.Sprintf("[%s] THINKING: %s", agentName, plan.Thinking))
 	}
 
 	for _, action := range plan.Actions {
-		localUtils.Logger(fmt.Sprintf("[Orchestrator] Triggering tool: %s on %s", action.Tool, action.Target), 1)
+		if !o.shouldRun(action.Tool, action.Target) {
+			localUtils.Logger(fmt.Sprintf("[%s] Skipping redundant tool: %s on %s", agentName, action.Tool, action.Target), 1)
+			continue
+		}
+
+		localUtils.Logger(fmt.Sprintf("[%s] Triggering tool: %s on %s", agentName, action.Tool, action.Target), 1)
 		
 		rateLimit, _ := action.Params["rate_limit"].(string)
+		if rateLimit == "" {
+			localUtils.Logger(fmt.Sprintf("[%s] Provided no rate limit for %s. Defaulting to 5.", agentName, action.Tool), 2)
+			rateLimit = "5" // Default safety rate limit
+		} else {
+			localUtils.Logger(fmt.Sprintf("[%s] AI-decided rate limit for %s: %s", agentName, action.Tool, rateLimit), 1)
+		}
 
 		switch action.Tool {
 		case "dalfox":
-			go tools.RunDalfox(action.Target, req.Method, bodyStr, req.Headers)
+			go tools.RunDalfox(action.Target, req.Method, bodyStr, req.Headers, rateLimit)
 		case "sqlmap":
 			// Reconstruct a proper raw request for sqlmap
 			u, _ := url.Parse(action.Target)
@@ -72,7 +102,7 @@ func (o *Orchestrator) processRequest(req burp.BurpRequest) {
 			}
 			
 			raw := fmt.Sprintf("%s %s HTTP/1.1\r\nHost: %s\r\n%s\r\n%s", req.Method, path, host, headerStr.String(), bodyStr)
-			go tools.RunSQLMap(action.Target, raw)
+			go tools.RunSQLMap(action.Target, raw, rateLimit)
 		case "nuclei":
 			tags, _ := action.Params["tags"].(string)
 			go tools.RunNuclei(action.Target, tags, rateLimit)
@@ -81,7 +111,7 @@ func (o *Orchestrator) processRequest(req burp.BurpRequest) {
 		case "ffuf":
 			go tools.RunFFUF(action.Target, req.Method, bodyStr, req.Headers, rateLimit)
 		case "arjun":
-			go tools.RunArjun(action.Target, req.Method, bodyStr, req.Headers)
+			go tools.RunArjun(action.Target, req.Method, bodyStr, req.Headers, rateLimit)
 		case "gospider":
 			go tools.RunGoSpider(action.Target, rateLimit)
 		case "censys":

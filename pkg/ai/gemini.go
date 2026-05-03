@@ -29,6 +29,10 @@ func NewGeminiBackend(apiKey, model string) *GeminiBackend {
 	return &GeminiBackend{APIKey: apiKey, Model: model}
 }
 
+func (g *GeminiBackend) Name() string {
+	return "Gemini"
+}
+
 func (g *GeminiBackend) Analyze(req burp.BurpRequest) (*AIPlan, error) {
 	if g.APIKey == "" {
 		return nil, fmt.Errorf("GEMINI_API_KEY not set")

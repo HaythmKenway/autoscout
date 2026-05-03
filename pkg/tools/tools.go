@@ -65,11 +65,18 @@ type DalfoxResult struct {
 	PoC      string `json:"poc"`
 }
 
-func RunDalfox(target string, method string, body string, headers map[string]string) {
+func RunDalfox(target string, method string, body string, headers map[string]string, rateLimit string) {
 	proxy := localUtils.GetProxyURL()
-	localUtils.Logger(fmt.Sprintf("[Tool] Starting DalFox scan on %s (Method: %s, Proxy: %s)", target, method, proxy), 1)
+	if proxy == "" {
+		proxy = "http://localhost:8080"
+	}
+	localUtils.Logger(fmt.Sprintf("[Tool] Starting DalFox scan on %s (Method: %s, Proxy: %s, Rate: %s)", target, method, proxy, rateLimit), 1)
 	
-	args := []string{"url", target, "--format", "json", "--proxy", proxy}
+	// Use jsonl for reliable line-by-line parsing and disable interactive features
+	args := []string{"url", target, "--format", "jsonl", "--no-color", "--no-spinner", "--proxy", proxy}
+	if rateLimit != "" {
+		args = append(args, "--delay", "1000") // 1000ms delay if rate limit requested
+	}
 	if body != "" {
 		args = append(args, "-X", method, "--data", body)
 	}
@@ -96,7 +103,7 @@ func RunDalfox(target string, method string, body string, headers map[string]str
 	})
 }
 
-func RunSQLMap(targetURL string, rawRequest string) {
+func RunSQLMap(targetURL string, rawRequest string, rateLimit string) {
 	proxy := localUtils.GetProxyURL()
 	dir := localUtils.GetWorkingDirectory()
 	reqFile := fmt.Sprintf("%s/sqlmap_req_%d.txt", dir, time.Now().Unix())
@@ -107,9 +114,24 @@ func RunSQLMap(targetURL string, rawRequest string) {
 		return
 	}
 
-	localUtils.Logger(fmt.Sprintf("[Tool] Starting SQLMap on %s (Proxy: %s)", targetURL, proxy), 1)
-	// Use --force-ssl if target is https
-	args := []string{"-r", reqFile, "--batch", "--random-agent", "--level", "1", "--risk", "1", "--proxy", proxy}
+	localUtils.Logger(fmt.Sprintf("[Tool] Starting SQLMap on %s (Proxy: %s, Rate: %s)", targetURL, proxy, rateLimit), 1)
+	// Enhanced SQLMap arguments for better results and verbosity
+	args := []string{
+		"-r", reqFile,
+		"--batch",
+		"--random-agent",
+		"--level", "2",
+		"--risk", "2",
+		"--threads", "5",
+		"--base64", "P", // Try base64 encoding for parameters
+		"--no-cast",
+		"--no-escape",
+		"--proxy", proxy,
+		"-v", "3", // Increased verbosity
+	}
+	if rateLimit != "" {
+		args = append(args, "--delay", "1") // 1 second delay
+	}
 	if strings.HasPrefix(targetURL, "https") {
 		args = append(args, "--force-ssl")
 	}
@@ -128,7 +150,7 @@ func RunSQLMap(targetURL string, rawRequest string) {
 
 func RunNuclei(target string, tags string, rateLimit string) {
 	proxy := localUtils.GetProxyURL()
-	localUtils.Logger(fmt.Sprintf("[Tool] Starting Nuclei scan on %s (Proxy: %s)", target, proxy), 1)
+	localUtils.Logger(fmt.Sprintf("[Tool] Starting Nuclei scan on %s (Proxy: %s, Rate: %s)", target, proxy, rateLimit), 1)
 	args := []string{"-u", target, "-silent", "-nc", "-proxy", proxy}
 	if tags != "" {
 		args = append(args, "-tags", tags)
@@ -138,6 +160,8 @@ func RunNuclei(target string, tags string, rateLimit string) {
 
 	if rateLimit != "" {
 		args = append(args, "-rl", rateLimit)
+	} else {
+		args = append(args, "-rl", "5") // Safety fallback
 	}
 
 	cmd := exec.Command("nuclei", args...)
@@ -186,7 +210,7 @@ func getWordlist() string {
 
 func RunFFUF(target string, method string, body string, headers map[string]string, rateLimit string) {
 	proxy := localUtils.GetProxyURL()
-	localUtils.Logger(fmt.Sprintf("[Tool] Starting FFUF on %s (Method: %s, Proxy: %s)", target, method, proxy), 1)
+	localUtils.Logger(fmt.Sprintf("[Tool] Starting FFUF on %s (Method: %s, Proxy: %s, Rate: %s)", target, method, proxy, rateLimit), 1)
 	
 	wordlist := getWordlist()
 	localUtils.Logger(fmt.Sprintf("[FFUF] Using wordlist: %s", wordlist), 1)
@@ -204,6 +228,8 @@ func RunFFUF(target string, method string, body string, headers map[string]strin
 
 	if rateLimit != "" {
 		args = append(args, "-rate", rateLimit)
+	} else {
+		args = append(args, "-rate", "5") // Safety fallback
 	}
 
 	cmd := exec.Command("ffuf", args...)
@@ -219,10 +245,13 @@ func RunFFUF(target string, method string, body string, headers map[string]strin
 	})
 }
 
-func RunArjun(target string, method string, body string, headers map[string]string) {
+func RunArjun(target string, method string, body string, headers map[string]string, rateLimit string) {
 	proxy := localUtils.GetProxyURL()
-	localUtils.Logger(fmt.Sprintf("[Tool] Starting Arjun on %s (Proxy: %s)", target, proxy), 1)
+	localUtils.Logger(fmt.Sprintf("[Tool] Starting Arjun on %s (Proxy: %s, Rate: %s)", target, proxy, rateLimit), 1)
 	args := []string{"-u", target, "--quiet", "--proxy", proxy}
+	if rateLimit != "" {
+		args = append(args, "--delay", "1") // 1 second delay
+	}
 	if method != "" {
 		args = append(args, "-m", method)
 	}
@@ -238,10 +267,12 @@ func RunArjun(target string, method string, body string, headers map[string]stri
 
 func RunGoSpider(target string, rateLimit string) {
 	proxy := localUtils.GetProxyURL()
-	localUtils.Logger(fmt.Sprintf("[Tool] Starting GoSpider on %s (Proxy: %s)", target, proxy), 1)
+	localUtils.Logger(fmt.Sprintf("[Tool] Starting GoSpider on %s (Proxy: %s, Rate: %s)", target, proxy, rateLimit), 1)
 	args := []string{"-s", target, "--quiet", "-p", proxy}
 	if rateLimit != "" {
 		args = append(args, "-c", rateLimit) // GoSpider uses -c for concurrency/rate
+	} else {
+		args = append(args, "-c", "2") // Safety fallback for crawler
 	}
 	cmd := exec.Command("gospider", args...)
 	runWithLogs("GoSpider", target, cmd, nil)
@@ -249,10 +280,12 @@ func RunGoSpider(target string, rateLimit string) {
 
 func RunKatana(target string, rateLimit string) {
 	proxy := localUtils.GetProxyURL()
-	localUtils.Logger(fmt.Sprintf("[Tool] Starting Katana on %s (Proxy: %s)", target, proxy), 1)
+	localUtils.Logger(fmt.Sprintf("[Tool] Starting Katana on %s (Proxy: %s, Rate: %s)", target, proxy, rateLimit), 1)
 	args := []string{"-u", target, "-silent", "-proxy", proxy}
 	if rateLimit != "" {
 		args = append(args, "-rl", rateLimit)
+	} else {
+		args = append(args, "-rl", "5") // Safety fallback
 	}
 	cmd := exec.Command("katana", args...)
 	

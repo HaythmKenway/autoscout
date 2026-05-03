@@ -116,7 +116,7 @@ func GetProxyURL() string {
 	settingsPath := os.ExpandEnv("$HOME/.config/autoscout/user-config.yaml")
 	data, err := os.ReadFile(settingsPath)
 	if err != nil {
-		return "http://127.0.0.1:8080"
+		return "http://localhost:8080"
 	}
 	var config struct {
 		Settings struct {
@@ -125,7 +125,7 @@ func GetProxyURL() string {
 	}
 	yaml.Unmarshal(data, &config)
 	if config.Settings.ProxyURL == "" {
-		return "http://127.0.0.1:8080"
+		return "http://localhost:8080"
 	}
 	return config.Settings.ProxyURL
 }

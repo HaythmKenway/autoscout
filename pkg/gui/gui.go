@@ -155,8 +155,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			newThemeName := m.settingsModel.userSettings.Theme
 			if newThemeName != m.theme.Name {
 				switch newThemeName {
-				case "Neon":
-					m.theme = NeonTheme
+				case "Cyberpunk":
+					m.theme = CyberpunkTheme
 				case "Matrix":
 					m.theme = MatrixTheme
 				default:
@@ -172,14 +172,34 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m *model) handleResize(w, h int) tea.Cmd {
-	leftWidth := int(float64(w) * 0.25)
-	if leftWidth < 15 {
-		leftWidth = 15
-	}
-	rightWidth := w - leftWidth - 1
+func (m model) vw(p float64) int {
+	return int(float64(m.width) * p / 100.0)
+}
 
-	subMsg := tea.WindowSizeMsg{Width: rightWidth, Height: h - 2}
+func (m model) vh(p float64) int {
+	return int(float64(m.height) * p / 100.0)
+}
+
+func (m *model) handleResize(w, h int) tea.Cmd {
+	m.width = w
+	m.height = h
+
+	sidebarWidth := int(float64(w) * 0.25)
+	if sidebarWidth < 15 { sidebarWidth = 15 }
+	if sidebarWidth > 30 { sidebarWidth = 30 }
+
+	// Calculate exact inner dimensions for content
+	// rightPanelTotal = Total - Sidebar - SidebarBorder(1)
+	rightPanelTotalWidth := w - sidebarWidth - 1
+	
+	// contentWidth (Inner) = total - Border(2) - Padding(2)
+	contentWidth := rightPanelTotalWidth - 4
+	contentHeight := h - 2 // Top/Bottom border
+
+	if contentWidth < 10 { contentWidth = 10 }
+	if contentHeight < 5 { contentHeight = 5 }
+
+	subMsg := tea.WindowSizeMsg{Width: contentWidth, Height: contentHeight}
 	var dCmd, sCmd, tCmd, aCmd tea.Cmd
 	m.dashboardModel, dCmd = m.dashboardModel.Update(subMsg)
 	m.settingsModel, sCmd = m.settingsModel.Update(subMsg)
@@ -189,44 +209,63 @@ func (m *model) handleResize(w, h int) tea.Cmd {
 }
 
 func (m model) View() string {
-	if m.width < 20 || m.height < 10 {
-		return "Terminal too small for UI 2.0"
+	if m.width < 30 || m.height < 10 {
+		return "Terminal too small"
 	}
 
-	leftWidth := int(float64(m.width) * 0.25)
-	if leftWidth < 15 {
-		leftWidth = 15
-	}
-	rightWidth := m.width - leftWidth - 1
+	sidebarWidth := int(float64(m.width) * 0.25)
+	if sidebarWidth < 15 { sidebarWidth = 15 }
+	if sidebarWidth > 30 { sidebarWidth = 30 }
 
 	// Render Left Panel (Navigation)
 	var navItems []string
 	for i, item := range m.NavItems {
-		style := lipgloss.NewStyle().Padding(0, 1)
+		style := lipgloss.NewStyle().Padding(0, 1).MarginLeft(1)
 		if i == m.activeTab {
 			if m.activePanel == PanelLeft {
 				style = style.Background(m.theme.Accent).Foreground(lipgloss.Color("#ffffff")).Bold(true)
 			} else {
-				style = style.Background(m.theme.InactiveTabBG).Foreground(m.theme.Foreground)
+				style = style.Foreground(m.theme.Accent).Bold(true)
 			}
 		} else {
 			style = style.Foreground(m.theme.InactiveTabFG)
 		}
-		
-		// Use the manager from the model
+
 		label := fmt.Sprintf("%s %s", m.NavIcons[i], item)
-		navItems = append(navItems, m.zm.Mark(fmt.Sprintf("nav-%d", i), style.Width(leftWidth - 2).Render(label)))
+		// Width calculation: sidebarWidth - padding(2) - margin(1) = sidebarWidth - 3
+		rendered := style.Width(sidebarWidth - 3).Render(label)
+		navItems = append(navItems, m.zm.Mark(fmt.Sprintf("nav-%d", i), rendered))
 	}
 
+	sidebarHeader := lipgloss.NewStyle().
+		Foreground(m.theme.Accent).
+		Bold(true).
+		Padding(1, 2).
+		Render("AUTOSCOUT")
+
+	sidebarContent := lipgloss.JoinVertical(lipgloss.Left,
+		sidebarHeader,
+		lipgloss.JoinVertical(lipgloss.Left, navItems...),
+	)
+	
 	leftPanel := lipgloss.NewStyle().
-		Width(leftWidth).
-		Height(m.height - 2).
+		Width(sidebarWidth).
+		Height(m.height).
+		Background(m.theme.SidebarBG).
 		Border(lipgloss.NormalBorder(), false, true, false, false).
 		BorderForeground(m.theme.BorderColor).
-		Render(lipgloss.JoinVertical(lipgloss.Left, navItems...))
+		Render(sidebarContent)
 
 	// Render Right Panel (Content)
-	content := ""
+	rightPanelTotalWidth := m.width - sidebarWidth - 1
+	contentWidth := rightPanelTotalWidth - 2 // Account for its own borders
+	contentHeight := m.height - 2
+
+	// Update inner content dimensions for sub-models
+	m.dashboardModel.dialog.width = contentWidth - 2 // Subtract Padding(0,1)
+	m.dashboardModel.dialog.height = contentHeight
+	
+	var content string
 	switch m.activeTab {
 	case 0:
 		content = m.dashboardModel.View(m.zm)
@@ -238,16 +277,18 @@ func (m model) View() string {
 		content = m.settingsModel.View()
 	}
 
-	rightPanelStyle := lipgloss.NewStyle().
-		Width(rightWidth).
-		Height(m.height - 2).
-		Padding(0, 1)
-	
+	borderColor := m.theme.BorderColor
 	if m.activePanel == PanelRight {
-		rightPanelStyle = rightPanelStyle.Border(lipgloss.NormalBorder()).BorderForeground(m.theme.Accent)
+		borderColor = m.theme.Accent
 	}
 
-	rightPanel := rightPanelStyle.Render(content)
+	rightPanel := lipgloss.NewStyle().
+		Width(contentWidth).
+		Height(contentHeight).
+		Padding(0, 1).
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(borderColor).
+		Render(content)
 
 	return m.zm.Scan(lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel))
 }
@@ -267,14 +308,15 @@ func LoadGui(port string, workQueue chan burp.BurpRequest) error {
 		zm:              zm,
 	}
 	
-	leftWidth := int(float64(w) * 0.25)
-	if leftWidth < 15 { leftWidth = 15 }
+	leftWidth := int(float64(w) * 0.20)
+	if leftWidth < 18 { leftWidth = 18 }
+	if leftWidth > 30 { leftWidth = 30 }
 	rightWidth := w - leftWidth - 1
 
-	m.settingsModel = NewSettingsModel(rightWidth, h-2)
-	m.dashboardModel = NewDashboardModel(rightWidth, h-2, port, workQueue)
-	m.targetModel = NewTargetModel(rightWidth, h-2)
-	m.analysisModel = NewAnalysisModel(rightWidth, h-2)
+	m.settingsModel = NewSettingsModel(rightWidth, h-4)
+	m.dashboardModel = NewDashboardModel(rightWidth, h-4, port, workQueue)
+	m.targetModel = NewTargetModel(rightWidth, h-4)
+	m.analysisModel = NewAnalysisModel(rightWidth, h-4)
 
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 
@@ -302,14 +344,15 @@ func SShHandler(s ssh.Session) (tea.Model, []tea.ProgramOption) {
 		zm:              zm,
 	}
 
-	leftWidth := int(float64(w) * 0.25)
-	if leftWidth < 15 { leftWidth = 15 }
+	leftWidth := int(float64(w) * 0.20)
+	if leftWidth < 18 { leftWidth = 18 }
+	if leftWidth > 30 { leftWidth = 30 }
 	rightWidth := w - leftWidth - 1
 
-	m.settingsModel = NewSettingsModel(rightWidth, h-2)
-	m.dashboardModel = NewDashboardModel(rightWidth, h-2, "8081", nil)
-	m.targetModel = NewTargetModel(rightWidth, h-2)
-	m.analysisModel = NewAnalysisModel(rightWidth, h-2)
+	m.settingsModel = NewSettingsModel(rightWidth, h-4)
+	m.dashboardModel = NewDashboardModel(rightWidth, h-4, "8081", nil)
+	m.targetModel = NewTargetModel(rightWidth, h-4)
+	m.analysisModel = NewAnalysisModel(rightWidth, h-4)
 	
 	return m, []tea.ProgramOption{tea.WithAltScreen()}
 }

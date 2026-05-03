@@ -20,6 +20,10 @@ func NewCodexBackend(model string) *CodexBackend {
 	return &CodexBackend{Model: model}
 }
 
+func (c *CodexBackend) Name() string {
+	return "Codex"
+}
+
 func (c *CodexBackend) Analyze(req burp.BurpRequest) (*AIPlan, error) {
 	decodedBody, _ := base64.StdEncoding.DecodeString(req.Body)
 	bodyStr := string(decodedBody)
@@ -27,54 +31,71 @@ func (c *CodexBackend) Analyze(req burp.BurpRequest) (*AIPlan, error) {
 		bodyStr = "[Empty Body]"
 	}
 
+	// Use full headers for maximum context
 	headersJSON, _ := json.MarshalIndent(req.Headers, "", "  ")
 	userKnowledge := LoadKnowledge()
 
-	prompt := fmt.Sprintf(`You are an expert penetration tester. Analyze the following HTTP request for vulnerabilities.
+	prompt := fmt.Sprintf(`You are a world-class penetration tester. Perform a deep security analysis on this HTTP request.
+ALL headers are provided below - do not ignore them as they may contain session tokens, custom security headers, or injection points.
+
+### HTTP REQUEST DATA
 Method: %s
 URL: %s
 Source: %s
-Headers:
-%s
-Body: %s
 
-### User Training & Expertise:
+[FULL HEADERS]
 %s
 
-### Instructions:
-1. **Analyze Request**: Carefully inspect headers and the body for sensitive data or injection points. Check for interesting headers like Authorization, Cookies, or custom headers. Use the provided "User Training" to guide your analysis.
-   - **Selective Fuzzing**: If the request is a simple GET with no parameters, or a POST with a static/irrelevant body, DO NOT trigger parameter fuzzing (ffuf, dalfox with parameters) unless there's a specific reason. Avoid "waste of time" scans on obviously static endpoints.
-   - **GraphQL/API**: Prioritize targeted checks for these endpoints rather than generic fuzzing.
-2. **Rules for Tool Selection**:
-   - API/GraphQL: If the URL contains '/api/' or 'graphql', DO NOT use web crawlers. Use nuclei or ffuf instead.
-   - Parameters: If parameters are detected, use dalfox or sqlmap.
+[BODY]
+%s
 
-3. **Stealth and Rate Limiting**:
-   - ALWAYS include a "rate_limit" parameter in "params" for high-volume tools (ffuf, katana, gospider, nuclei).
-   - If the target is a major platform (e.g., reddit, google, github), set "rate_limit" to a low value (e.g., 5-10 requests per second) to avoid blocking.
-   - Example for FFUF on a sensitive target: {"tool": "ffuf", "target": "URL", "params": {"rate_limit": "5"}}
+### USER-SPECIFIC KNOWLEDGE
+%s
 
-4. **Output Format**: Output ONLY a JSON object with this exact structure:
+### MANDATORY ANALYSIS GUIDELINES
+1. **Header Analysis**: Deeply inspect every header (Authorization, Cookies, X-Forwarded-For, etc.) for misconfigurations or vulnerabilities like IDOR, session fixation, or header injection.
+2. **Selective Tooling**: Trigger specific tools ONLY if relevant to the request type. 
+   - Use 'sqlmap' if parameters or JSON bodies are present.
+   - Use 'dalfox' for reflected input.
+   - Use 'nuclei' for known vulnerability templates on APIs.
+3. **Safety**: ALWAYS include "rate_limit" in tool params. Default to "5" for high-traffic targets.
+
+### RESPONSE SPECIFICATION
+Output ONLY raw JSON. No markdown, no preamble.
 {
-  "thinking": "Your detailed reasoning here.",
-  "vulnerabilities_suspected": ["type1", "type2"],
-  "actions": [{"tool": "toolname", "target": "string", "params": {"key": "val"}}],
-  "rewrite_rules": ["modified_body_base64_string_if_needed"]
+  "thinking": "Concise security reasoning.",
+  "vulnerabilities_suspected": ["List suspected flaws"],
+  "actions": [{"tool": "name", "target": "url", "params": {"key": "val"}}],
+  "rewrite_rules": ["Optional: base64 encoded modified body"]
 }
-No preamble, no markdown formatting. Just raw JSON.`, req.Method, req.URL, req.Tool, string(headersJSON), bodyStr, userKnowledge)
+`, req.Method, req.URL, req.Tool, string(headersJSON), bodyStr, userKnowledge)
 
 	// Use codex exec --json --ephemeral
-	args := []string{"exec", "--json", "--ephemeral", "--skip-git-repo-check", "--ask-for-approval", "never"}
+	// Added --ignore-user-config and --ignore-rules to ensure environment consistency
+	// Added "-" to explicitly read from stdin and suppress "Reading prompt from stdin..." message
+	args := []string{
+		"exec",
+		"--json",
+		"--ephemeral",
+		"--skip-git-repo-check",
+		"--dangerously-bypass-approvals-and-sandbox",
+		"--ignore-user-config",
+		"--ignore-rules",
+		"-",
+	}
 	if c.Model != "" {
 		args = append(args, "--model", c.Model)
 	}
-	args = append(args, prompt)
 
 	cmd := exec.Command("codex", args...)
+	cmd.Stdin = strings.NewReader(prompt)
+	localUtils.Logger(fmt.Sprintf("[DEBUG] Codex Prompt length: %d (Piped to Stdin with -)", len(prompt)), 3)
+	
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err
 	}
+	stderr, _ := cmd.StderrPipe()
 
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("failed to start codex: %v", err)
@@ -93,13 +114,30 @@ No preamble, no markdown formatting. Just raw JSON.`, req.Method, req.URL, req.T
 		if err := json.Unmarshal([]byte(line), &event); err == nil {
 			if event.Type == "item.completed" && event.Item.Text != "" {
 				rawJSON = event.Item.Text
-				break
+				// Continue scanning to drain pipe, but we have our result
 			}
 		}
 	}
 
-	if err := cmd.Wait(); err != nil {
-		return nil, fmt.Errorf("codex execution failed: %v", err)
+	errScanner := bufio.NewScanner(stderr)
+	var errLines []string
+	for errScanner.Scan() {
+		line := errScanner.Text()
+		// Filter out the "Reading prompt from stdin..." or similar informational messages
+		if !strings.Contains(line, "Reading") && !strings.Contains(line, "prompt") {
+			errLines = append(errLines, line)
+		}
+	}
+
+	cmdErr := cmd.Wait()
+	if cmdErr != nil {
+		errMsg := strings.Join(errLines, " | ")
+		// If we have rawJSON, it might have actually succeeded despite a non-zero exit (e.g. sandbox warning)
+		if rawJSON == "" {
+			localUtils.Logger(fmt.Sprintf("[DEBUG] Codex Error Output: %s", errMsg), 3)
+			return nil, fmt.Errorf("codex execution failed (%v): %s", cmdErr, errMsg)
+		}
+		localUtils.Logger(fmt.Sprintf("[DEBUG] Codex exited with error but returned JSON: %v", cmdErr), 3)
 	}
 
 	if rawJSON == "" {

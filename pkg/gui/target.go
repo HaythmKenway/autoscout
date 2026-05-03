@@ -71,6 +71,14 @@ func (m targetModel) Init() tea.Cmd {
 	return nil
 }
 
+func (m targetModel) vw(p float64) int {
+	return int(float64(m.width) * p / 100.0)
+}
+
+func (m targetModel) vh(p float64) int {
+	return int(float64(m.height) * p / 100.0)
+}
+
 func (m targetModel) Update(msg tea.Msg) (targetModel, tea.Cmd) {
 	var cmd tea.Cmd
 
@@ -79,7 +87,7 @@ func (m targetModel) Update(msg tea.Msg) (targetModel, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.table.SetWidth(msg.Width - 4)
-		m.table.SetHeight(msg.Height - 8)
+		m.table.SetHeight(m.vh(70))
 		cols := m.table.Columns()
 		if len(cols) > 0 {
 			cols[0].Width = msg.Width - 10
@@ -139,6 +147,8 @@ func (m targetModel) View() string {
 		th := m.height
 		if th < 0 { th = 0 }
 
+		m.input.Width = m.vw(50)
+
 		return lipgloss.Place(
 			tw, th,
 			lipgloss.Center, lipgloss.Center,
@@ -148,20 +158,30 @@ func (m targetModel) View() string {
 		)
 	}
 
-	tw := m.width - 4
-	if tw < 0 { tw = 0 }
+	// Math for stability:
+	// tableHeader (1) + tableHeaderBorder (1) + tableRows (tableHeight) + \n (1) + help (1) = ContentHeight
+	// We want ContentHeight to fit in m.height (which already accounts for outer border)
+	// Actually, baseStyle adds a border (+2 lines).
+	// So inner available height is m.height - 2.
+	// tableHeight = (m.height - 2) - 4 = m.height - 6
+	tableHeight := m.height - 6
+	if tableHeight < 1 {
+		tableHeight = 1
+	}
+	m.table.SetHeight(tableHeight)
+	m.table.SetWidth(m.width - 2)
 
 	baseStyle := lipgloss.NewStyle().
 		BorderStyle(m.theme.Border).
 		BorderForeground(m.theme.InactiveTabFG).
-		Width(tw)
+		Width(m.width).
+		Height(m.height)
 
 	return baseStyle.Render(
 		lipgloss.JoinVertical(lipgloss.Left,
 			m.table.View(),
 			lipgloss.NewStyle().
 				Foreground(m.theme.InactiveTabFG).
-				MarginTop(1).
 				Render(" [a] Add Target   [d] Delete Target   [↑/↓] Navigate"),
 		),
 	)

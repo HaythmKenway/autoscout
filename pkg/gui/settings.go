@@ -60,11 +60,11 @@ func NewSettingsModel(width int, height int) settingsModel {
 
 	userSettings := &settingsConfig.Settings
 	if userSettings.Theme == "" { userSettings.Theme = "Modern" }
-	if userSettings.Agent == "" { userSettings.Agent = "Gemini" }
+	if userSettings.Agent == "" { userSettings.Agent = "Codex" }
 	if userSettings.ProxyURL == "" { userSettings.ProxyURL = "http://127.0.0.1:8080" }
 
 	// UI Options
-	themes := []string{"Modern", "Neon", "Matrix"}
+	themes := []string{"Modern", "Cyberpunk", "Matrix"}
 	tCursor := 0
 	for i, t := range themes {
 		if t == userSettings.Theme {
@@ -109,6 +109,14 @@ func NewSettingsModel(width int, height int) settingsModel {
 		discordModel:  discordModel,
 		userSettings:  userSettings,
 	}
+}
+
+func (m settingsModel) vw(p float64) int {
+	return int(float64(m.width) * p / 100.0)
+}
+
+func (m settingsModel) vh(p float64) int {
+	return int(float64(m.height) * p / 100.0)
 }
 
 func (m settingsModel) Init() tea.Cmd {
@@ -204,7 +212,8 @@ func (m *settingsModel) save() {
 }
 
 func (m settingsModel) View() string {
-	catWidth := 18
+	catWidth := m.vw(25)
+	if catWidth < 18 { catWidth = 18 }
 	editorWidth := m.width - catWidth - 4
 	if editorWidth < 0 { editorWidth = 0 }
 
@@ -272,6 +281,7 @@ func (m settingsModel) View() string {
 			" - DeepScanner",
 		)
 	case CatDiscord:
+		m.discordInputs[0].Width = m.vw(60)
 		editorContent = lipgloss.JoinVertical(lipgloss.Left,
 			titleStyle.Render("DISCORD CONFIGURATION"),
 			"Webhook URL:",
@@ -281,7 +291,7 @@ func (m settingsModel) View() string {
 
 	editorStyle := lipgloss.NewStyle().
 		Width(editorWidth).
-		Height(m.height - 4).
+		Height(m.vh(80)).
 		Padding(1).
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(lipgloss.Color("237"))
