@@ -38,9 +38,10 @@ public class AutoscoutHttpHandler implements HttpHandler {
             return RequestToBeSentAction.continueWith(httpRequestToBeSent);
         }
 
-        HttpRequest modifiedRequest = sendToAutoscout("request", httpRequestToBeSent);
+        String toolName = httpRequestToBeSent.toolSource().toolType().name();
+        HttpRequest modifiedRequest = sendToAutoscout("request", httpRequestToBeSent, toolName);
         if (modifiedRequest != null) {
-            ui.log("Request analyzed/modified: " + httpRequestToBeSent.url());
+            ui.log("[" + toolName + "] Request modified: " + httpRequestToBeSent.url());
             return RequestToBeSentAction.continueWith(modifiedRequest);
         }
         return RequestToBeSentAction.continueWith(httpRequestToBeSent);
@@ -52,9 +53,10 @@ public class AutoscoutHttpHandler implements HttpHandler {
             return ResponseReceivedAction.continueWith(httpResponseReceived);
         }
 
-        HttpResponse modifiedResponse = sendToAutoscoutResponse("response", httpResponseReceived);
+        String toolName = httpResponseReceived.toolSource().toolType().name();
+        HttpResponse modifiedResponse = sendToAutoscoutResponse("response", httpResponseReceived, toolName);
         if (modifiedResponse != null) {
-            ui.log("Response analyzed/modified.");
+            ui.log("[" + toolName + "] Response modified.");
             return ResponseReceivedAction.continueWith(modifiedResponse);
         }
         return ResponseReceivedAction.continueWith(httpResponseReceived);
@@ -64,9 +66,8 @@ public class AutoscoutHttpHandler implements HttpHandler {
         return ui.getApiEndpoint().trim().isEmpty();
     }
 
-    private HttpRequest sendToAutoscout(String type, HttpRequest req) {
+    private HttpRequest sendToAutoscout(String type, HttpRequest req, String tool) {
         try {
-            ui.log("-> Intercepted " + type + ": " + req.url());
             URL url = new URL(ui.getApiEndpoint() + "/request");
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("POST");
@@ -78,6 +79,7 @@ public class AutoscoutHttpHandler implements HttpHandler {
             JsonObject payload = new JsonObject();
             payload.addProperty("url", req.url());
             payload.addProperty("method", req.method());
+            payload.addProperty("tool", tool);
             payload.addProperty("body", Base64.getEncoder().encodeToString(req.body().getBytes()));
 
             try (OutputStream os = conn.getOutputStream()) {
@@ -90,21 +92,17 @@ public class AutoscoutHttpHandler implements HttpHandler {
                 if (responseJson.has("modified") && responseJson.get("modified").getAsBoolean()) {
                     String newBodyBase64 = responseJson.get("body").getAsString();
                     byte[] newBody = Base64.getDecoder().decode(newBodyBase64);
-                    ui.log("<- Received modified body from Autoscout");
                     return req.withBody(ByteArray.byteArray(newBody));
                 }
-            } else {
-                ui.log("!! Autoscout returned error: " + conn.getResponseCode());
             }
         } catch (Exception e) {
-            ui.log("Error sending request to Autoscout: " + e.getMessage());
+            // Ignore errors for now
         }
         return null;
     }
 
-    private HttpResponse sendToAutoscoutResponse(String type, HttpResponse resp) {
+    private HttpResponse sendToAutoscoutResponse(String type, HttpResponse resp, String tool) {
         try {
-            ui.log("-> Intercepted " + type);
             URL url = new URL(ui.getApiEndpoint() + "/response");
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("POST");
@@ -115,6 +113,7 @@ public class AutoscoutHttpHandler implements HttpHandler {
 
             JsonObject payload = new JsonObject();
             payload.addProperty("status", resp.statusCode());
+            payload.addProperty("tool", tool);
             payload.addProperty("body", Base64.getEncoder().encodeToString(resp.body().getBytes()));
 
             try (OutputStream os = conn.getOutputStream()) {
@@ -127,14 +126,11 @@ public class AutoscoutHttpHandler implements HttpHandler {
                 if (responseJson.has("modified") && responseJson.get("modified").getAsBoolean()) {
                     String newBodyBase64 = responseJson.get("body").getAsString();
                     byte[] newBody = Base64.getDecoder().decode(newBodyBase64);
-                    ui.log("<- Received modified response body from Autoscout");
                     return resp.withBody(ByteArray.byteArray(newBody));
                 }
-            } else {
-                ui.log("!! Autoscout returned error: " + conn.getResponseCode());
             }
         } catch (Exception e) {
-            ui.log("Error sending response to Autoscout: " + e.getMessage());
+            // Ignore errors for now
         }
         return null;
     }

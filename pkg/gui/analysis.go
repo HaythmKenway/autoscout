@@ -29,12 +29,28 @@ func NewAnalysisModel(w, h int) analysisModel {
 }
 
 func (m *analysisModel) AddEntry(entry string) {
-	m.entries = append(m.entries, entry)
-	if len(m.entries) > 100 {
+	styledEntry := entry
+	if strings.Contains(entry, "AI ALERT") || strings.Contains(entry, "CRITICAL") {
+		styledEntry = lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true).Render(entry)
+	} else if strings.Contains(entry, "AI:") || strings.Contains(entry, "modified") {
+		styledEntry = lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Render(entry)
+	} else if strings.Contains(entry, "[AI Fleet]") {
+		styledEntry = lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Italic(true).Render(entry)
+	} else if strings.HasPrefix(entry, "REQ:") {
+		styledEntry = lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Render(entry)
+	}
+
+	m.entries = append(m.entries, styledEntry)
+	if len(m.entries) > 200 {
 		m.entries = m.entries[1:]
 	}
 	m.viewport.SetContent(strings.Join(m.entries, "\n"))
 	m.viewport.GotoBottom()
+}
+
+func (m *analysisModel) Clear() {
+	m.entries = []string{}
+	m.viewport.SetContent("Traffic Analysis Feed cleared. Waiting for new data...")
 }
 
 func (m analysisModel) Init() tea.Cmd {
@@ -56,8 +72,11 @@ func (m analysisModel) Update(msg tea.Msg) (analysisModel, tea.Cmd) {
 
 func (m analysisModel) View() string {
 	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6")).Underline(true).MarginBottom(1)
+	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).MarginTop(1)
+	
 	return lipgloss.JoinVertical(lipgloss.Left,
 		titleStyle.Render("INTERCEPTED TRAFFIC ANALYSIS"),
 		m.viewport.View(),
+		helpStyle.Render(" [c] Clear Feed   [up/down] Scroll"),
 	)
 }

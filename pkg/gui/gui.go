@@ -97,6 +97,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.activeTab == 4 {
 				return m, tea.Quit
 			}
+		case "c":
+			if m.activeTab == 2 {
+				m.analysisModel.Clear()
+			}
 		}
 
 	case tea.WindowSizeMsg:

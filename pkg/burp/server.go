@@ -17,11 +17,13 @@ import (
 type BurpRequest struct {
 	URL    string `json:"url"`
 	Method string `json:"method"`
+	Tool   string `json:"tool"`
 	Body   string `json:"body"` // Base64 encoded
 }
 
 type BurpResponse struct {
 	Status int    `json:"status"`
+	Tool   string `json:"tool"`
 	Body   string `json:"body"` // Base64 encoded
 }
 
@@ -149,25 +151,39 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	decodedBody, _ := base64.StdEncoding.DecodeString(req.Body)
-	localUtils.Logger(fmt.Sprintf("[Burp -> Request] %s %s (%d bytes)", req.Method, req.URL, len(decodedBody)), 1)
+	localUtils.Logger(fmt.Sprintf("[Burp -> %s] %s %s (%d bytes)", req.Tool, req.Method, req.URL, len(decodedBody)), 1)
 
-	// Add to Analysis UI
-	addAnalysis(fmt.Sprintf("REQ: %s %s (%d bytes)", req.Method, req.URL, len(decodedBody)))
+	// --- AI Heuristic Routing ---
+	if !isStaticAsset(req.URL) {
+		addAnalysis(fmt.Sprintf("[%s] REQ: %s %s", req.Tool, req.Method, req.URL))
+		
+		// Check for parameters (Potential SQLi/XSS/Fuzzing)
+		if strings.Contains(req.URL, "?") || len(decodedBody) > 0 {
+			delegateToAgent("ParameterFuzzer", req.URL)
+		}
 
-	// DEMO: AI Modification Loop
-	modified := false
-	newBody := req.Body
-	if strings.Contains(strings.ToLower(string(decodedBody)), "fuzz-me") {
-		localUtils.Logger("[AI] Detected 'fuzz-me' keyword. Modifying request...", 1)
-		fuzzed := strings.ReplaceAll(string(decodedBody), "fuzz-me", "AUTOSCOUT-FUZZED")
-		newBody = base64.StdEncoding.EncodeToString([]byte(fuzzed))
-		modified = true
-		addAnalysis("AI: Modified request body (keyword 'fuzz-me' detected)")
+		// Check for JSON/API (Potential IDOR/BOLA)
+		if strings.Contains(strings.ToLower(req.URL), "/api/") {
+			delegateToAgent("APIAnalyzer", req.URL)
+		}
+		
+		// DEMO: Specific keyword modification
+		if strings.Contains(strings.ToLower(string(decodedBody)), "fuzz-me") {
+			localUtils.Logger("[AI] Detected 'fuzz-me' keyword. Modifying request...", 1)
+			fuzzed := strings.ReplaceAll(string(decodedBody), "fuzz-me", "AUTOSCOUT-FUZZED")
+			req.Body = base64.StdEncoding.EncodeToString([]byte(fuzzed))
+			addAnalysis("AI: Modified request body (keyword 'fuzz-me' detected)")
+			
+			resp := BurpModified{Modified: true, Body: req.Body}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+			return
+		}
 	}
 
 	resp := BurpModified{
-		Modified: modified,
-		Body:     newBody,
+		Modified: false,
+		Body:     req.Body,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -197,15 +213,21 @@ func handleResponse(w http.ResponseWriter, r *http.Request) {
 	}
 
 	decodedBody, _ := base64.StdEncoding.DecodeString(resp.Body)
-	localUtils.Logger(fmt.Sprintf("[Burp -> Response] Status %d (%d bytes)", resp.Status, len(decodedBody)), 1)
+	localUtils.Logger(fmt.Sprintf("[Burp -> %s] Response Status %d (%d bytes)", resp.Tool, resp.Status, len(decodedBody)), 1)
 
-	// Add to Analysis UI
-	addAnalysis(fmt.Sprintf("RES: Status %d (%d bytes)", resp.Status, len(decodedBody)))
+	// --- AI Heuristic Routing ---
+	if resp.Status == 200 && len(decodedBody) > 0 {
+		addAnalysis(fmt.Sprintf("[%s] RES: Status %d (%d bytes)", resp.Tool, resp.Status, len(decodedBody)))
+		
+		// Check for sensitive info (PII/Secrets)
+		bodyStr := string(decodedBody)
+		if strings.Contains(bodyStr, "AWS_ACCESS_KEY") || strings.Contains(bodyStr, "API_KEY") || strings.Contains(bodyStr, "secret") {
+			delegateToAgent("InfoLeakScanner", "Check logs for details")
+		}
 
-	// DEMO: AI Analysis Loop
-	if strings.Contains(strings.ToLower(string(decodedBody)), "admin") {
-		localUtils.Logger("[AI] Found 'admin' in response. Flagging for review.", 1)
-		addAnalysis("AI ALERT: 'admin' keyword detected in response body!")
+		if strings.Contains(strings.ToLower(bodyStr), "admin") {
+			addAnalysis("AI ALERT: 'admin' keyword detected in response body!")
+		}
 	}
 
 	modResp := BurpModified{
@@ -215,4 +237,20 @@ func handleResponse(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(modResp)
+}
+
+func isStaticAsset(u string) bool {
+	extensions := []string{".js", ".css", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".woff", ".woff2", ".ttf", ".ico"}
+	for _, ext := range extensions {
+		if strings.HasSuffix(strings.Split(u, "?")[0], ext) {
+			return true
+		}
+	}
+	return false
+}
+
+func delegateToAgent(agentName string, target string) {
+	msg := fmt.Sprintf("[AI Fleet] %s is investigating %s", agentName, target)
+	localUtils.Logger(msg, 1)
+	addAnalysis(msg)
 }
