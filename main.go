@@ -48,7 +48,7 @@ func main() {
 	controller.Init()
 
 	// Initialize AI Fleet (Ollama)
-	ollama := ai.NewOllamaBackend("", "llama3")
+	ollama := ai.NewOllamaBackend("", "llama3.2:latest")
 	orch := orchestrator.NewOrchestrator(ollama)
 	go orch.Start()
 

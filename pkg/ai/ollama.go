@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/HaythmKenway/autoscout/pkg/burp"
+	"github.com/HaythmKenway/autoscout/pkg/localUtils"
 )
 
 type OllamaBackend struct {
@@ -31,7 +32,7 @@ func NewOllamaBackend(baseURL, model string) *OllamaBackend {
 		baseURL = "http://localhost:11434"
 	}
 	if model == "" {
-		model = "llama3"
+		model = "llama3.2:latest"
 	}
 	return &OllamaBackend{BaseURL: baseURL, Model: model}
 }
@@ -75,11 +76,17 @@ Only output the JSON object. No preamble.`, req.Method, req.URL, req.Tool, req.B
 
 	var ollamaResp ollamaResponse
 	if err := json.NewDecoder(resp.Body).Decode(&ollamaResp); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to decode ollama response: %v", err)
+	}
+
+	if ollamaResp.Response == "" {
+		return nil, fmt.Errorf("ollama returned an empty response (check if model '%s' is installed)", o.Model)
 	}
 
 	var plan AIPlan
 	if err := json.Unmarshal([]byte(ollamaResp.Response), &plan); err != nil {
+		// Log the failed JSON for debugging
+		localUtils.Logger(fmt.Sprintf("[DEBUG] AI returned invalid JSON: %s", ollamaResp.Response), 3)
 		return nil, fmt.Errorf("failed to parse AI plan JSON: %v", err)
 	}
 
