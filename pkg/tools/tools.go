@@ -28,13 +28,27 @@ func runWithLogs(toolName string, cmd *exec.Cmd, onComplete func(string)) {
 	multi := io.MultiReader(stdout, stderr)
 	scanner := bufio.NewScanner(multi)
 	
+	// Increase buffer size to 1MB to handle large JSON lines (e.g. from dalfox/katana)
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 1024*1024)
+	
 	for scanner.Scan() {
 		line := scanner.Text()
 		fullOutput.WriteString(line + "\n")
 		localUtils.Logger(fmt.Sprintf("[%s] %s", toolName, line), 1)
 	}
 
-	cmd.Wait()
+	if err := scanner.Err(); err != nil {
+		localUtils.Logger(fmt.Sprintf("[%s] Scanner error: %v", toolName, err), 2)
+	}
+
+	err := cmd.Wait()
+	if err != nil {
+		localUtils.Logger(fmt.Sprintf("[%s] Finished with error: %v", toolName, err), 2)
+	} else {
+		localUtils.Logger(fmt.Sprintf("[%s] Finished successfully", toolName), 1)
+	}
+
 	if onComplete != nil {
 		onComplete(fullOutput.String())
 	}
