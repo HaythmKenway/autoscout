@@ -11,20 +11,17 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/HaythmKenway/autoscout/internal/ai"
 	"github.com/HaythmKenway/autoscout/internal/controller"
 	"github.com/HaythmKenway/autoscout/internal/db"
 	"github.com/HaythmKenway/autoscout/internal/scheduler"
 	gui_module "github.com/HaythmKenway/autoscout/pkg/gui"
 	"github.com/HaythmKenway/autoscout/pkg/httpx"
 	"github.com/HaythmKenway/autoscout/pkg/localUtils"
-	"github.com/HaythmKenway/autoscout/pkg/proxy"
 
 	"github.com/charmbracelet/ssh"
 	"github.com/charmbracelet/wish"
 	"github.com/charmbracelet/wish/activeterm"
 	"github.com/charmbracelet/wish/bubbletea"
-	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -40,49 +37,10 @@ func main() {
 	spi := flag.String("spider", "", "Run spider")
 	gui := flag.Bool("g", false, "Start GUI")
 	sshMode := flag.Bool("ssh", false, "Start sshserver")
-	proxyMode := flag.Bool("p", false, "Start decoupled Proxy and AI Fleet")
-	proxyPort := flag.String("port", "8081", "Port for the decoupled proxy")
-	genCert := flag.Bool("gencert", false, "Generate MITM Root CA certificate")
 
 	flag.Parse()
 
-	if *genCert {
-		crt, _, err := proxy.LoadOrCreateCA()
-		if err != nil {
-			fmt.Printf("Failed to generate CA: %v\n", err)
-			return
-		}
-		crtPath, _ := proxy.GetCAPaths()
-		fmt.Printf("Root CA Generated Successfully!\nCommon Name: %s\nPath: %s\n", crt.Subject.CommonName, crtPath)
-		return
-	}
-
 	controller.Init()
-
-	if *proxyMode {
-		// Read settings for upstream proxy
-		settingsPath := os.ExpandEnv("$HOME/.config/autoscout/user-config.yaml")
-		data, err := os.ReadFile(settingsPath)
-		upstream := ""
-		if err == nil {
-			var config struct {
-				Settings struct {
-					UpstreamProxy string `yaml:"upstream_proxy"`
-				} `yaml:"settings"`
-			}
-			yaml.Unmarshal(data, &config)
-			upstream = config.Settings.UpstreamProxy
-		}
-
-		// Start AI Router in background
-		go ai.StartRouter()
-		// Start Proxy (Blocking)
-		addr := net.JoinHostPort("127.0.0.1", *proxyPort)
-		if err := proxy.StartProxy(addr, upstream); err != nil {
-			localUtils.Logger(fmt.Sprintf("Proxy failed: %v", err), 2)
-		}
-		return
-	}
 
 	if *sshMode {
 		sshdeeznuts()

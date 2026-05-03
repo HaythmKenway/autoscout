@@ -17,9 +17,7 @@ type settingsCategory int
 
 const (
 	CatUI settingsCategory = iota
-	CatAI
 	CatDiscord
-	CatProxy
 )
 
 type settingsModel struct {
@@ -29,13 +27,6 @@ type settingsModel struct {
 	// UI Settings
 	themeOptions []string
 	themeCursor  int
-	
-	// AI Settings
-	agentOptions []string
-	agentCursor  int
-	
-	// Proxy Settings
-	proxyInputs []textinput.Model
 	
 	// Discord Settings
 	discordInputs []textinput.Model
@@ -64,7 +55,6 @@ func NewSettingsModel(width int, height int) settingsModel {
 
 	userSettings := &settingsConfig.Settings
 	if userSettings.Theme == "" { userSettings.Theme = "Modern" }
-	if userSettings.Agent == "" { userSettings.Agent = "Gemini" }
 
 	// UI Options
 	themes := []string{"Modern", "Neon", "Matrix"}
@@ -76,16 +66,6 @@ func NewSettingsModel(width int, height int) settingsModel {
 		}
 	}
 
-	// AI Options
-	agents := []string{"Gemini", "Ollama", "Skibbidi"}
-	aCursor := 0
-	for i, a := range agents {
-		if a == userSettings.Agent {
-			aCursor = i
-			break
-		}
-	}
-
 	// Discord Inputs
 	di := textinput.New()
 	di.Placeholder = "Webhook URL"
@@ -93,21 +73,11 @@ func NewSettingsModel(width int, height int) settingsModel {
 	di.CharLimit = 256
 	di.Width = 40
 
-	// Proxy Inputs
-	pi := textinput.New()
-	pi.Placeholder = "Upstream Proxy (e.g. http://127.0.0.1:8080)"
-	pi.SetValue(userSettings.UpstreamProxy)
-	pi.CharLimit = 256
-	pi.Width = 40
-
 	return settingsModel{
 		activeCat:     CatUI,
 		themeOptions:  themes,
 		themeCursor:   tCursor,
-		agentOptions:  agents,
-		agentCursor:   aCursor,
 		discordInputs: []textinput.Model{di},
-		proxyInputs:   []textinput.Model{pi},
 		width:         width,
 		height:        height,
 		discordModel:  discordModel,
@@ -140,14 +110,11 @@ func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 			case "up", "k":
 				if m.activeCat > 0 { m.activeCat-- }
 			case "down", "j":
-				if m.activeCat < CatProxy { m.activeCat++ }
+				if m.activeCat < CatDiscord { m.activeCat++ }
 			case "right", "l", "enter", "tab":
 				m.focusEditor = true
 				if m.activeCat == CatDiscord {
 					m.discordInputs[0].Focus()
-				}
-				if m.activeCat == CatProxy {
-					m.proxyInputs[0].Focus()
 				}
 			}
 		} else {
@@ -162,28 +129,12 @@ func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 				case "left", "h", "esc":
 					m.focusEditor = false
 				}
-			case CatAI:
-				switch msg.String() {
-				case "up", "k":
-					if m.agentCursor > 0 { m.agentCursor-- }
-				case "down", "j":
-					if m.agentCursor < len(m.agentOptions)-1 { m.agentCursor++ }
-				case "left", "h", "esc":
-					m.focusEditor = false
-				}
 			case CatDiscord:
 				if msg.String() == "esc" {
 					m.focusEditor = false
 					m.discordInputs[0].Blur()
 				}
 				m.discordInputs[0], cmd = m.discordInputs[0].Update(msg)
-				cmds = append(cmds, cmd)
-			case CatProxy:
-				if msg.String() == "esc" {
-					m.focusEditor = false
-					m.proxyInputs[0].Blur()
-				}
-				m.proxyInputs[0], cmd = m.proxyInputs[0].Update(msg)
 				cmds = append(cmds, cmd)
 			}
 		}
@@ -205,15 +156,11 @@ func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 func (m *settingsModel) save() {
 	// Sync UI State to UserSettings
 	m.userSettings.Theme = m.themeOptions[m.themeCursor]
-	m.userSettings.Agent = m.agentOptions[m.agentCursor]
-	m.userSettings.UpstreamProxy = m.proxyInputs[0].Value()
 	m.discordModel.DiscordWebhookURL = m.discordInputs[0].Value()
 
 	// Persist to Disk
 	storetodb(m.discordModel, "Dwebhook", m.discordModel.DiscordWebhookURL)
 	updateSettingsConfig("theme", m.userSettings.Theme)
-	updateSettingsConfig("agent", m.userSettings.Agent)
-	updateSettingsConfig("upstream_proxy", m.userSettings.UpstreamProxy)
 	localUtils.Logger("Settings persisted to disk", 1)
 }
 
@@ -223,7 +170,7 @@ func (m settingsModel) View() string {
 	if editorWidth < 0 { editorWidth = 0 }
 
 	// Categories List
-	categories := []string{" UI / Appearance ", " AI Fleet Mode ", " Discord / Notify ", " Proxy Chaining "}
+	categories := []string{" UI / Appearance ", " Discord / Notify "}
 	var catViews []string
 	for i, cat := range categories {
 		style := lipgloss.NewStyle().Padding(0, 1).MarginBottom(1)
@@ -262,37 +209,11 @@ func (m settingsModel) View() string {
 			titleStyle.Render("SELECT THEME"),
 			lipgloss.JoinVertical(lipgloss.Left, opts...),
 		)
-	case CatAI:
-		var opts []string
-		for i, opt := range m.agentOptions {
-			prefix := "( ) "
-			style := lipgloss.NewStyle()
-			if i == m.agentCursor {
-				prefix = "(*) "
-				if m.focusEditor {
-					style = style.Foreground(lipgloss.Color("5")).Bold(true)
-				}
-			}
-			opts = append(opts, style.Render(prefix+opt))
-		}
-		editorContent = lipgloss.JoinVertical(lipgloss.Left,
-			titleStyle.Render("SELECT AI MODEL"),
-			lipgloss.JoinVertical(lipgloss.Left, opts...),
-		)
 	case CatDiscord:
 		editorContent = lipgloss.JoinVertical(lipgloss.Left,
 			titleStyle.Render("DISCORD CONFIGURATION"),
 			"Webhook URL:",
 			m.discordInputs[0].View(),
-		)
-	case CatProxy:
-		editorContent = lipgloss.JoinVertical(lipgloss.Left,
-			titleStyle.Render("PROXY CHAINING (BURP SUITE)"),
-			"Upstream Proxy URL:",
-			m.proxyInputs[0].View(),
-			"",
-			lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("Example: http://127.0.0.1:8080"),
-			lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("Leave empty to use FoxyProxy direct mode."),
 		)
 	}
 
@@ -330,7 +251,7 @@ func storetodb(discord *Discord, key string, value string) {
 	switch key {
 	case "Did", "Dchannel", "Dame", "Dformat", "Dwebhook":
 		updateDiscordConfig(discord, key, value)
-	case "agent", "data", "theme":
+	case "data", "theme":
 		updateSettingsConfig(key, value)
 	}
 }
@@ -368,12 +289,8 @@ func updateSettingsConfig(key string, value string) {
 	if err != nil { config = &SettingsConfig{} }
 
 	switch key {
-	case "agent":
-		config.Settings.Agent = value
 	case "theme":
 		config.Settings.Theme = value
-	case "upstream_proxy":
-		config.Settings.UpstreamProxy = value
 	}
 
 	writeSettingsConfig(filePath, config)
@@ -416,10 +333,8 @@ type Discord struct {
 }
 
 type Settings struct {
-	Agent         string `yaml:"agent"`
 	Data          string `yaml:"data"`
 	Theme         string `yaml:"theme"`
-	UpstreamProxy string `yaml:"upstream_proxy"`
 }
 
 type DiscordConfig struct {
