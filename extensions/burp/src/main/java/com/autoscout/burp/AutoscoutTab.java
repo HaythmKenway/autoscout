@@ -6,6 +6,12 @@ import java.awt.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
+
 public class AutoscoutTab {
     private final JPanel mainPanel;
     private final JTextArea logArea;
@@ -15,8 +21,10 @@ public class AutoscoutTab {
     private final JCheckBox enableRepeaterCheck;
     private final JCheckBox enableIntruderCheck;
     private final JCheckBox autoForwardCheck;
+    private final List<String[]> bbHeaders = new ArrayList<>();
 
     public AutoscoutTab(MontoyaApi api) {
+        loadBBHeaders();
         mainPanel = new JPanel(new BorderLayout(10, 10));
         mainPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 
@@ -71,10 +79,30 @@ public class AutoscoutTab {
     public boolean isRepeaterEnabled() { return enableRepeaterCheck.isSelected(); }
     public boolean isIntruderEnabled() { return enableIntruderCheck.isSelected(); }
     public String getApiEndpoint() { return apiEndpointField.getText(); }
+    public List<String[]> getBbHeaders() { return bbHeaders; }
+
     public void log(String message) {
         SwingUtilities.invokeLater(() -> {
             logArea.append(message + "\n");
         });
+    }
+
+    private void loadBBHeaders() {
+        try {
+            Path path = Paths.get(System.getProperty("user.home"), ".bb_headers");
+            if (Files.exists(path)) {
+                List<String> lines = Files.readAllLines(path);
+                for (String line : lines) {
+                    if (line.contains(":")) {
+                        String[] parts = line.split(":", 2);
+                        bbHeaders.add(new String[]{parts[0].trim(), parts[1].trim()});
+                    }
+                }
+                // We can't log here because logArea isn't initialized yet, but we'll log in the constructor later if needed
+            }
+        } catch (Exception e) {
+            // Fail silently or print to stderr
+        }
     }
 
     private void testConnection() {

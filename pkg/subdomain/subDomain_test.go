@@ -1,22 +1,17 @@
-package subdomain_test
+package subdomain
 
 import (
+	"reflect"
 	"testing"
-
-	"github.com/HaythmKenway/autoscout/pkg/subdomain"
 )
 
-func TestSubdomain(t *testing.T) {
-	domain := "example.com"
+func TestParseSubfinderOutput(t *testing.T) {
+	input := " beta.example.com \n\nalpha.example.com\n"
 
-	subdomains, err := subdomain.Subdomain(domain)
-	if err != nil {
-		t.Errorf("Error while enumerating subdomains: %v", err)
+	got := parseSubfinderOutput(input)
+	want := []string{"alpha.example.com", "beta.example.com"}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("parseSubfinderOutput() = %#v, want %#v", got, want)
 	}
-
-	if len(subdomains) == 0 {
-		t.Errorf("No subdomains found for domain %s", domain)
-	}
-
-	t.Logf("Subdomains for domain %s: %v", domain, subdomains)
 }

@@ -9,6 +9,7 @@ import burp.api.montoya.http.handler.ResponseReceivedAction;
 import burp.api.montoya.http.message.HttpRequestResponse;
 import burp.api.montoya.http.message.requests.HttpRequest;
 import burp.api.montoya.http.message.responses.HttpResponse;
+import burp.api.montoya.http.message.HttpHeader;
 import burp.api.montoya.core.ByteArray;
 
 import com.google.gson.Gson;
@@ -21,6 +22,8 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.ArrayList;
+import java.util.List;
 
 public class AutoscoutHttpHandler implements HttpHandler {
     private final MontoyaApi api;
@@ -35,23 +38,31 @@ public class AutoscoutHttpHandler implements HttpHandler {
 
     @Override
     public RequestToBeSentAction handleHttpRequestToBeSent(HttpRequestToBeSent httpRequestToBeSent) {
-        if (!ui.isEnabled() || !ui.isAutoForwardEnabled() || apiEndpointInvalid()) {
-            return RequestToBeSentAction.continueWith(httpRequestToBeSent);
+        String toolName = httpRequestToBeSent.toolSource().toolType().name();
+        HttpRequest currentRequest = httpRequestToBeSent;
+
+        // Auto-Inject BB Headers for PROXY traffic
+        if (toolName.equals("PROXY") && !ui.getBbHeaders().isEmpty()) {
+            for (String[] header : ui.getBbHeaders()) {
+                currentRequest = currentRequest.withHeader(HttpHeader.httpHeader(header[0], header[1]));
+            }
         }
 
-        String toolName = httpRequestToBeSent.toolSource().toolType().name();
-        
-        // Selective Routing
-        if (toolName.equals("PROXY") && !ui.isProxyEnabled()) return RequestToBeSentAction.continueWith(httpRequestToBeSent);
-        if (toolName.equals("REPEATER") && !ui.isRepeaterEnabled()) return RequestToBeSentAction.continueWith(httpRequestToBeSent);
-        if (toolName.equals("INTRUDER") && !ui.isIntruderEnabled()) return RequestToBeSentAction.continueWith(httpRequestToBeSent);
+        if (!ui.isEnabled() || !ui.isAutoForwardEnabled() || apiEndpointInvalid()) {
+            return RequestToBeSentAction.continueWith(currentRequest);
+        }
 
-        HttpRequest modifiedRequest = sendToAutoscout("request", httpRequestToBeSent, toolName);
+        // Selective Routing
+        if (toolName.equals("PROXY") && !ui.isProxyEnabled()) return RequestToBeSentAction.continueWith(currentRequest);
+        if (toolName.equals("REPEATER") && !ui.isRepeaterEnabled()) return RequestToBeSentAction.continueWith(currentRequest);
+        if (toolName.equals("INTRUDER") && !ui.isIntruderEnabled()) return RequestToBeSentAction.continueWith(currentRequest);
+
+        HttpRequest modifiedRequest = sendToAutoscout("request", currentRequest, toolName);
         if (modifiedRequest != null) {
-            ui.log("[" + toolName + "] Request modified: " + httpRequestToBeSent.url());
+            ui.log("[" + toolName + "] Request modified: " + currentRequest.url());
             return RequestToBeSentAction.continueWith(modifiedRequest);
         }
-        return RequestToBeSentAction.continueWith(httpRequestToBeSent);
+        return RequestToBeSentAction.continueWith(currentRequest);
     }
 
     @Override

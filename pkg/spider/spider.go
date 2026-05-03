@@ -2,27 +2,39 @@ package spider
 
 import (
 	"os/exec"
-	"strings"
 	"sort"
-	
+	"strings"
+
 	"github.com/HaythmKenway/autoscout/pkg/localUtils"
 )
 
-func Spider(domain string) ([]string,error) {
+func Spider(domain string) ([]string, error) {
 	cmd := exec.Command("gau", domain)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil,err	}
+		return nil, err
+	}
 	outputString := string(output)
-	pipe:=exec.Command("grep","^h")
-	pipe.Stdin= strings.NewReader(outputString)
+	pipe := exec.Command("grep", "^h")
+	pipe.Stdin = strings.NewReader(outputString)
 	output1, err := pipe.CombinedOutput()
 	if err != nil {
-		return nil,err
+		return nil, err
 	}
 
-	lines := strings.Split(string(output1),"\n")
-	sort.Strings(lines)
+	lines := ParseSpiderOutput(string(output1))
+	return lines, nil
+}
+
+func ParseSpiderOutput(output string) []string {
+	lines := make([]string, 0)
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
 	lines = localUtils.RemoveDuplicates(lines)
-	return lines,nil
+	sort.Strings(lines)
+	return lines
 }

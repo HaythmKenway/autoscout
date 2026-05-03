@@ -1,8 +1,10 @@
 package tools
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -11,6 +13,32 @@ import (
 	"github.com/HaythmKenway/autoscout/internal/db"
 	"github.com/HaythmKenway/autoscout/pkg/localUtils"
 )
+
+// runWithLogs starts a command and streams its output to the global logger in real-time
+func runWithLogs(toolName string, cmd *exec.Cmd, onComplete func(string)) {
+	stdout, _ := cmd.StdoutPipe()
+	stderr, _ := cmd.StderrPipe()
+	
+	if err := cmd.Start(); err != nil {
+		localUtils.Logger(fmt.Sprintf("[%s] Failed to start: %v", toolName, err), 2)
+		return
+	}
+
+	var fullOutput strings.Builder
+	multi := io.MultiReader(stdout, stderr)
+	scanner := bufio.NewScanner(multi)
+	
+	for scanner.Scan() {
+		line := scanner.Text()
+		fullOutput.WriteString(line + "\n")
+		localUtils.Logger(fmt.Sprintf("[%s] %s", toolName, line), 1)
+	}
+
+	cmd.Wait()
+	if onComplete != nil {
+		onComplete(fullOutput.String())
+	}
+}
 
 // DalfoxResult is a subset of DalFox's JSON output
 type DalfoxResult struct {
@@ -22,25 +50,22 @@ type DalfoxResult struct {
 func RunDalfox(target string) {
 	localUtils.Logger(fmt.Sprintf("[Tool] Starting DalFox scan on %s", target), 1)
 	cmd := exec.Command("dalfox", "url", target, "--format", "json")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		localUtils.Logger(fmt.Sprintf("[DalFox] Error: %v", err), 2)
-		return
-	}
+	
+	runWithLogs("DalFox", cmd, func(output string) {
+		lines := strings.Split(output, "\n")
+		database, _ := db.OpenDatabase()
+		defer database.Close()
 
-	lines := strings.Split(string(output), "\n")
-	database, _ := db.OpenDatabase()
-	defer database.Close()
-
-	for _, line := range lines {
-		if strings.TrimSpace(line) == "" { continue }
-		var res DalfoxResult
-		if err := json.Unmarshal([]byte(line), &res); err == nil {
-			db.AddVulnerability(database, target, "XSS", res.PoC, "DalFox", "High")
-			localUtils.Logger(fmt.Sprintf("[AI ALERT] DalFox found XSS: %s", res.PoC), 1)
-			localUtils.ReportToBurp("XSS Found (DalFox)", res.PoC, "High")
+		for _, line := range lines {
+			if strings.TrimSpace(line) == "" { continue }
+			var res DalfoxResult
+			if err := json.Unmarshal([]byte(line), &res); err == nil {
+				db.AddVulnerability(database, target, "XSS", res.PoC, "DalFox", "High")
+				localUtils.Logger(fmt.Sprintf("[AI ALERT] DalFox found XSS: %s", res.PoC), 1)
+				localUtils.ReportToBurp("XSS Found (DalFox)", res.PoC, "High")
+			}
 		}
-	}
+	})
 }
 
 func RunSQLMap(targetURL string, rawRequest string) {
@@ -55,15 +80,16 @@ func RunSQLMap(targetURL string, rawRequest string) {
 
 	localUtils.Logger(fmt.Sprintf("[Tool] Starting SQLMap on %s", targetURL), 1)
 	cmd := exec.Command("sqlmap", "-r", reqFile, "--batch", "--random-agent", "--level", "1", "--risk", "1")
-	output, _ := cmd.CombinedOutput()
 	
-	if strings.Contains(string(output), "is vulnerable") {
-		database, _ := db.OpenDatabase()
-		defer database.Close()
-		db.AddVulnerability(database, targetURL, "SQL Injection", "Confirmed via SQLMap", "SQLMap", "Critical")
-		localUtils.Logger(fmt.Sprintf("[AI ALERT] SQLMap confirmed vulnerability at %s", targetURL), 1)
-		localUtils.ReportToBurp("SQL Injection Confirmed", targetURL, "High")
-	}
+	runWithLogs("SQLMap", cmd, func(output string) {
+		if strings.Contains(output, "is vulnerable") {
+			database, _ := db.OpenDatabase()
+			defer database.Close()
+			db.AddVulnerability(database, targetURL, "SQL Injection", "Confirmed via SQLMap", "SQLMap", "Critical")
+			localUtils.Logger(fmt.Sprintf("[AI ALERT] SQLMap confirmed vulnerability at %s", targetURL), 1)
+			localUtils.ReportToBurp("SQL Injection Confirmed", targetURL, "High")
+		}
+	})
 }
 
 func RunNuclei(target string, tags string) {
@@ -76,65 +102,56 @@ func RunNuclei(target string, tags string) {
 	}
 
 	cmd := exec.Command("nuclei", args...)
-	output, _ := cmd.CombinedOutput()
-	
-	if len(output) > 0 {
-		localUtils.Logger(fmt.Sprintf("[Nuclei] Findings:\n%s", string(output)), 1)
-		// Logic to parse nuclei findings and add to DB
-	}
+	runWithLogs("Nuclei", cmd, nil)
 }
 
 func RunFFUF(target string) {
 	localUtils.Logger(fmt.Sprintf("[Tool] Starting FFUF on %s", target), 1)
-	// Example: ffuf -u target/FUZZ -w wordlist -mc 200,301
-	wordlist := "/usr/share/wordlists/dirb/common.txt" // Default path
+	wordlist := "/usr/share/wordlists/dirb/common.txt"
 	if _, err := os.Stat(wordlist); err != nil {
 		localUtils.Logger("[FFUF] Wordlist not found, skipping", 2)
 		return
 	}
 	
 	cmd := exec.Command("ffuf", "-u", target+"/FUZZ", "-w", wordlist, "-s")
-	output, _ := cmd.CombinedOutput()
-	
-	lines := strings.Split(string(output), "\n")
-	database, _ := db.OpenDatabase()
-	defer database.Close()
-	for _, line := range lines {
-		if strings.TrimSpace(line) != "" {
-			db.AddFuzzResult(database, target, line, "FUZZ", "FFUF")
+	runWithLogs("FFUF", cmd, func(output string) {
+		lines := strings.Split(output, "\n")
+		database, _ := db.OpenDatabase()
+		defer database.Close()
+		for _, line := range lines {
+			if strings.TrimSpace(line) != "" {
+				db.AddFuzzResult(database, target, line, "FUZZ", "FFUF")
+			}
 		}
-	}
+	})
 }
 
 func RunArjun(target string) {
 	localUtils.Logger(fmt.Sprintf("[Tool] Starting Arjun on %s", target), 1)
 	cmd := exec.Command("arjun", "-u", target, "--quiet")
-	output, _ := cmd.CombinedOutput()
-	if len(output) > 0 {
-		localUtils.Logger(fmt.Sprintf("[Arjun] Discovered parameters at %s", target), 1)
-	}
+	runWithLogs("Arjun", cmd, nil)
 }
 
 func RunGoSpider(target string) {
 	localUtils.Logger(fmt.Sprintf("[Tool] Starting GoSpider on %s", target), 1)
 	cmd := exec.Command("gospider", "-s", target, "--quiet")
-	cmd.Run()
+	runWithLogs("GoSpider", cmd, nil)
 }
 
 func RunKatana(target string) {
 	localUtils.Logger(fmt.Sprintf("[Tool] Starting Katana on %s", target), 1)
 	cmd := exec.Command("katana", "-u", target, "-silent")
-	output, _ := cmd.CombinedOutput()
 	
-	database, _ := db.OpenDatabase()
-	defer database.Close()
-
-	endpoints := strings.Split(string(output), "\n")
-	db.AddSpiderTargets(database, target, endpoints)
+	runWithLogs("Katana", cmd, func(output string) {
+		database, _ := db.OpenDatabase()
+		defer database.Close()
+		endpoints := strings.Split(output, "\n")
+		db.AddSpiderTargets(database, target, endpoints)
+	})
 }
 
 func RunCensys(target string) {
 	localUtils.Logger(fmt.Sprintf("[Tool] Starting Censys search: %s", target), 1)
 	cmd := exec.Command("censys", "search", target)
-	cmd.Run()
+	runWithLogs("Censys", cmd, nil)
 }
