@@ -17,6 +17,7 @@ type settingsCategory int
 
 const (
 	CatUI settingsCategory = iota
+	CatAI
 	CatDiscord
 )
 
@@ -27,6 +28,10 @@ type settingsModel struct {
 	// UI Settings
 	themeOptions []string
 	themeCursor  int
+	
+	// AI Settings
+	agentOptions []string
+	agentCursor  int
 	
 	// Discord Settings
 	discordInputs []textinput.Model
@@ -55,6 +60,7 @@ func NewSettingsModel(width int, height int) settingsModel {
 
 	userSettings := &settingsConfig.Settings
 	if userSettings.Theme == "" { userSettings.Theme = "Modern" }
+	if userSettings.Agent == "" { userSettings.Agent = "Gemini" }
 
 	// UI Options
 	themes := []string{"Modern", "Neon", "Matrix"}
@@ -62,6 +68,16 @@ func NewSettingsModel(width int, height int) settingsModel {
 	for i, t := range themes {
 		if t == userSettings.Theme {
 			tCursor = i
+			break
+		}
+	}
+
+	// AI Options
+	agents := []string{"Gemini", "Ollama", "Skibbidi"}
+	aCursor := 0
+	for i, a := range agents {
+		if a == userSettings.Agent {
+			aCursor = i
 			break
 		}
 	}
@@ -77,6 +93,8 @@ func NewSettingsModel(width int, height int) settingsModel {
 		activeCat:     CatUI,
 		themeOptions:  themes,
 		themeCursor:   tCursor,
+		agentOptions:  agents,
+		agentCursor:   aCursor,
 		discordInputs: []textinput.Model{di},
 		width:         width,
 		height:        height,
@@ -129,6 +147,15 @@ func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 				case "left", "h", "esc":
 					m.focusEditor = false
 				}
+			case CatAI:
+				switch msg.String() {
+				case "up", "k":
+					if m.agentCursor > 0 { m.agentCursor-- }
+				case "down", "j":
+					if m.agentCursor < len(m.agentOptions)-1 { m.agentCursor++ }
+				case "left", "h", "esc":
+					m.focusEditor = false
+				}
 			case CatDiscord:
 				if msg.String() == "esc" {
 					m.focusEditor = false
@@ -156,11 +183,13 @@ func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 func (m *settingsModel) save() {
 	// Sync UI State to UserSettings
 	m.userSettings.Theme = m.themeOptions[m.themeCursor]
+	m.userSettings.Agent = m.agentOptions[m.agentCursor]
 	m.discordModel.DiscordWebhookURL = m.discordInputs[0].Value()
 
 	// Persist to Disk
 	storetodb(m.discordModel, "Dwebhook", m.discordModel.DiscordWebhookURL)
 	updateSettingsConfig("theme", m.userSettings.Theme)
+	updateSettingsConfig("agent", m.userSettings.Agent)
 	localUtils.Logger("Settings persisted to disk", 1)
 }
 
@@ -170,7 +199,7 @@ func (m settingsModel) View() string {
 	if editorWidth < 0 { editorWidth = 0 }
 
 	// Categories List
-	categories := []string{" UI / Appearance ", " Discord / Notify "}
+	categories := []string{" UI / Appearance ", " AI Fleet Mode ", " Discord / Notify "}
 	var catViews []string
 	for i, cat := range categories {
 		style := lipgloss.NewStyle().Padding(0, 1).MarginBottom(1)
@@ -208,6 +237,29 @@ func (m settingsModel) View() string {
 		editorContent = lipgloss.JoinVertical(lipgloss.Left,
 			titleStyle.Render("SELECT THEME"),
 			lipgloss.JoinVertical(lipgloss.Left, opts...),
+		)
+	case CatAI:
+		var opts []string
+		for i, opt := range m.agentOptions {
+			prefix := "( ) "
+			style := lipgloss.NewStyle()
+			if i == m.agentCursor {
+				prefix = "(*) "
+				if m.focusEditor {
+					style = style.Foreground(lipgloss.Color("5")).Bold(true)
+				}
+			}
+			opts = append(opts, style.Render(prefix+opt))
+		}
+		editorContent = lipgloss.JoinVertical(lipgloss.Left,
+			titleStyle.Render("SELECT AI AGENT BACKEND"),
+			lipgloss.JoinVertical(lipgloss.Left, opts...),
+			"",
+			lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("Active Fleet:"),
+			" - ParameterFuzzer",
+			" - APIAnalyzer",
+			" - InfoLeakScanner",
+			" - DeepScanner",
 		)
 	case CatDiscord:
 		editorContent = lipgloss.JoinVertical(lipgloss.Left,
@@ -251,7 +303,7 @@ func storetodb(discord *Discord, key string, value string) {
 	switch key {
 	case "Did", "Dchannel", "Dame", "Dformat", "Dwebhook":
 		updateDiscordConfig(discord, key, value)
-	case "data", "theme":
+	case "agent", "data", "theme":
 		updateSettingsConfig(key, value)
 	}
 }
@@ -289,6 +341,8 @@ func updateSettingsConfig(key string, value string) {
 	if err != nil { config = &SettingsConfig{} }
 
 	switch key {
+	case "agent":
+		config.Settings.Agent = value
 	case "theme":
 		config.Settings.Theme = value
 	}
@@ -333,6 +387,7 @@ type Discord struct {
 }
 
 type Settings struct {
+	Agent         string `yaml:"agent"`
 	Data          string `yaml:"data"`
 	Theme         string `yaml:"theme"`
 }

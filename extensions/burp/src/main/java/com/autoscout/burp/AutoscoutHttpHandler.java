@@ -35,7 +35,7 @@ public class AutoscoutHttpHandler implements HttpHandler {
 
     @Override
     public RequestToBeSentAction handleHttpRequestToBeSent(HttpRequestToBeSent httpRequestToBeSent) {
-        if (!ui.isEnabled() || apiEndpointInvalid()) {
+        if (!ui.isEnabled() || !ui.isAutoForwardEnabled() || apiEndpointInvalid()) {
             return RequestToBeSentAction.continueWith(httpRequestToBeSent);
         }
 
@@ -56,7 +56,7 @@ public class AutoscoutHttpHandler implements HttpHandler {
 
     @Override
     public ResponseReceivedAction handleHttpResponseReceived(HttpResponseReceived httpResponseReceived) {
-        if (!ui.isEnabled() || apiEndpointInvalid()) {
+        if (!ui.isEnabled() || !ui.isAutoForwardEnabled() || apiEndpointInvalid()) {
             return ResponseReceivedAction.continueWith(httpResponseReceived);
         }
 
