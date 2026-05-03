@@ -48,6 +48,10 @@ func LoadBackend() AIAgent {
 		return NewGeminiBackend("", "gemini-1.5-flash")
 	}
 
+	if agentType == "Codex" {
+		return NewCodexBackend("")
+	}
+
 	// Default to Ollama with the confirmed working model
 	return NewOllamaBackend("", "llama3.2:latest")
 }

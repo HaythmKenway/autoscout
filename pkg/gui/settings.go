@@ -73,7 +73,7 @@ func NewSettingsModel(width int, height int) settingsModel {
 	}
 
 	// AI Options
-	agents := []string{"Gemini", "Ollama", "Skibbidi"}
+	agents := []string{"Gemini", "Ollama", "Codex", "Skibbidi"}
 	aCursor := 0
 	for i, a := range agents {
 		if a == userSettings.Agent {
