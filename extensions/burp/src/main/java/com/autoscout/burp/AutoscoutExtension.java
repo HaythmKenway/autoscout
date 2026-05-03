@@ -16,6 +16,10 @@ public class AutoscoutExtension implements BurpExtension {
         AutoscoutHttpHandler httpHandler = new AutoscoutHttpHandler(api, uiTab);
         api.http().registerHttpHandler(httpHandler);
 
+        // Context Menu (Right-click "Send to Autoscout")
+        AutoscoutContextMenu menuProvider = new AutoscoutContextMenu(api, uiTab, httpHandler);
+        api.userInterface().registerContextMenuItemsProvider(menuProvider);
+
         api.logging().logToOutput("Autoscout Burp Integration loaded successfully.");
     }
 }

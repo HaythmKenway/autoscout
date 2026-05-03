@@ -13,28 +13,37 @@
 [[1;34mINFO[m] 
 [[1;34mINFO[m] [1m--- [0;32mmaven-compiler-plugin:3.1:compile[m [1m(default-compile)[m @ [36mautoscout-burp[0;1m ---[m
 [[1;34mINFO[m] Changes detected - recompiling the module!
-[[1;34mINFO[m] Compiling 3 source files to /home/akileswar/Documents/autoscout/extensions/burp/target/classes
-[[1;33mWARNING[m] /home/akileswar/Documents/autoscout/extensions/burp/src/main/java/com/autoscout/burp/AutoscoutHttpHandler.java: /home/akileswar/Documents/autoscout/extensions/burp/src/main/java/com/autoscout/burp/AutoscoutHttpHandler.java uses or overrides a deprecated API.
+[[1;34mINFO[m] Compiling 4 source files to /home/akileswar/Documents/autoscout/extensions/burp/target/classes
+[[1;34mINFO[m] -------------------------------------------------------------
+[[1;33mWARNING[m] COMPILATION WARNING : 
+[[1;34mINFO[m] -------------------------------------------------------------
+[[1;33mWARNING[m] /home/akileswar/Documents/autoscout/extensions/burp/src/main/java/com/autoscout/burp/AutoscoutHttpHandler.java: Some input files use or override a deprecated API.
 [[1;33mWARNING[m] /home/akileswar/Documents/autoscout/extensions/burp/src/main/java/com/autoscout/burp/AutoscoutHttpHandler.java: Recompile with -Xlint:deprecation for details.
-[[1;34mINFO[m] 
-[[1;34mINFO[m] [1m--- [0;32mmaven-resources-plugin:2.6:testResources[m [1m(default-testResources)[m @ [36mautoscout-burp[0;1m ---[m
-[[1;34mINFO[m] Using 'UTF-8' encoding to copy filtered resources.
-[[1;34mINFO[m] skip non existing resourceDirectory /home/akileswar/Documents/autoscout/extensions/burp/src/test/resources
-[[1;34mINFO[m] 
-[[1;34mINFO[m] [1m--- [0;32mmaven-compiler-plugin:3.1:testCompile[m [1m(default-testCompile)[m @ [36mautoscout-burp[0;1m ---[m
-[[1;34mINFO[m] No sources to compile
-[[1;34mINFO[m] 
-[[1;34mINFO[m] [1m--- [0;32mmaven-surefire-plugin:2.12.4:test[m [1m(default-test)[m @ [36mautoscout-burp[0;1m ---[m
-[[1;34mINFO[m] No tests to run.
-[[1;34mINFO[m] 
-[[1;34mINFO[m] [1m--- [0;32mmaven-jar-plugin:2.4:jar[m [1m(default-jar)[m @ [36mautoscout-burp[0;1m ---[m
-[[1;34mINFO[m] Building jar: /home/akileswar/Documents/autoscout/extensions/burp/target/autoscout-burp-1.0-SNAPSHOT.jar
-[[1;34mINFO[m] 
-[[1;34mINFO[m] [1m--- [0;32mmaven-assembly-plugin:3.6.0:single[m [1m(default)[m @ [36mautoscout-burp[0;1m ---[m
-[[1;34mINFO[m] Building jar: /home/akileswar/Documents/autoscout/extensions/burp/target/autoscout-burp-1.0-SNAPSHOT-jar-with-dependencies.jar
+[[1;34mINFO[m] 2 warnings 
+[[1;34mINFO[m] -------------------------------------------------------------
+[[1;34mINFO[m] -------------------------------------------------------------
+[[1;31mERROR[m] COMPILATION ERROR : 
+[[1;34mINFO[m] -------------------------------------------------------------
+[[1;31mERROR[m] /home/akileswar/Documents/autoscout/extensions/burp/src/main/java/com/autoscout/burp/AutoscoutHttpHandler.java:[65,28] cannot find symbol
+  symbol:   class HttpRequestResponse
+  location: class com.autoscout.burp.AutoscoutHttpHandler
+[[1;34mINFO[m] 1 error
+[[1;34mINFO[m] -------------------------------------------------------------
 [[1;34mINFO[m] [1m------------------------------------------------------------------------[m
-[[1;34mINFO[m] [1;32mBUILD SUCCESS[m
+[[1;34mINFO[m] [1;31mBUILD FAILURE[m
 [[1;34mINFO[m] [1m------------------------------------------------------------------------[m
-[[1;34mINFO[m] Total time:  1.210 s
-[[1;34mINFO[m] Finished at: 2026-05-03T11:18:10+05:30
+[[1;34mINFO[m] Total time:  0.779 s
+[[1;34mINFO[m] Finished at: 2026-05-03T12:07:01+05:30
 [[1;34mINFO[m] [1m------------------------------------------------------------------------[m
+[[1;31mERROR[m] Failed to execute goal [32morg.apache.maven.plugins:maven-compiler-plugin:3.1:compile[m [1m(default-compile)[m on project [36mautoscout-burp[m: [1;31mCompilation failure[m
+[[1;31mERROR[m] [1;31m/home/akileswar/Documents/autoscout/extensions/burp/src/main/java/com/autoscout/burp/AutoscoutHttpHandler.java:[65,28] cannot find symbol[m
+[[1;31mERROR[m] [1;31m  symbol:   class HttpRequestResponse[m
+[[1;31mERROR[m] [1;31m  location: class com.autoscout.burp.AutoscoutHttpHandler[m
+[[1;31mERROR[m] [1;31m[m
+[[1;31mERROR[m] -> [1m[Help 1][m
+[[1;31mERROR[m] 
+[[1;31mERROR[m] To see the full stack trace of the errors, re-run Maven with the [1m-e[m switch.
+[[1;31mERROR[m] Re-run Maven using the [1m-X[m switch to enable full debug logging.
+[[1;31mERROR[m] 
+[[1;31mERROR[m] For more information about the errors and possible solutions, please read the following articles:
+[[1;31mERROR[m] [1m[Help 1][m http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException

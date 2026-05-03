@@ -6,6 +6,7 @@ import burp.api.montoya.http.handler.HttpRequestToBeSent;
 import burp.api.montoya.http.handler.HttpResponseReceived;
 import burp.api.montoya.http.handler.RequestToBeSentAction;
 import burp.api.montoya.http.handler.ResponseReceivedAction;
+import burp.api.montoya.http.message.HttpRequestResponse;
 import burp.api.montoya.http.message.requests.HttpRequest;
 import burp.api.montoya.http.message.responses.HttpResponse;
 import burp.api.montoya.core.ByteArray;
@@ -60,6 +61,40 @@ public class AutoscoutHttpHandler implements HttpHandler {
             return ResponseReceivedAction.continueWith(modifiedResponse);
         }
         return ResponseReceivedAction.continueWith(httpResponseReceived);
+    }
+
+    public void sendManual(HttpRequestResponse message) {
+        if (apiEndpointInvalid()) return;
+        
+        try {
+            URL url = new URL(ui.getApiEndpoint() + "/manual");
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setDoOutput(true);
+
+            JsonObject payload = new JsonObject();
+            payload.addProperty("url", message.request().url());
+            payload.addProperty("method", message.request().method());
+            payload.addProperty("tool", "MANUAL");
+            payload.addProperty("request_body", Base64.getEncoder().encodeToString(message.request().body().getBytes()));
+            
+            if (message.hasResponse()) {
+                payload.addProperty("status", message.response().statusCode());
+                payload.addProperty("response_body", Base64.getEncoder().encodeToString(message.response().body().getBytes()));
+            }
+
+            try (OutputStream os = conn.getOutputStream()) {
+                byte[] input = gson.toJson(payload).getBytes(StandardCharsets.UTF_8);
+                os.write(input, 0, input.length);
+            }
+
+            if (conn.getResponseCode() == 200) {
+                ui.log("<- Autoscout acknowledged manual analysis.");
+            }
+        } catch (Exception e) {
+            ui.log("!! Manual send failed: " + e.getMessage());
+        }
     }
 
     private boolean apiEndpointInvalid() {

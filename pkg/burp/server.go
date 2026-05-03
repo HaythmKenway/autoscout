@@ -32,6 +32,15 @@ type BurpModified struct {
 	Body     string `json:"body"` // Base64 encoded
 }
 
+type BurpManualRequest struct {
+	URL          string `json:"url"`
+	Method       string `json:"method"`
+	Tool         string `json:"tool"`
+	RequestBody  string `json:"request_body"`  // Base64 encoded
+	Status       int    `json:"status"`        // Optional
+	ResponseBody string `json:"response_body"` // Base64 encoded, Optional
+}
+
 var (
 	mu      sync.Mutex
 	running bool
@@ -84,6 +93,7 @@ func StartServer(port string) error {
 	})
 	mux.HandleFunc("/request", handleRequest)
 	mux.HandleFunc("/response", handleResponse)
+	mux.HandleFunc("/manual", handleManual)
 
 	addr := fmt.Sprintf("127.0.0.1:%s", port)
 	server = &http.Server{
@@ -237,6 +247,37 @@ func handleResponse(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(modResp)
+}
+
+func handleManual(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read body", http.StatusInternalServerError)
+		return
+	}
+
+	var req BurpManualRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	localUtils.Logger(fmt.Sprintf("[Burp -> MANUAL] High-Priority Analysis for %s", req.URL), 1)
+	addAnalysis("CRITICAL: Received Manual Investigation Task!")
+	addAnalysis(fmt.Sprintf("TARGET: %s %s", req.Method, req.URL))
+	
+	if req.Status > 0 {
+		addAnalysis(fmt.Sprintf("STATUS: %d", req.Status))
+	}
+	
+	delegateToAgent("DeepScanner", req.URL)
+
+	w.WriteHeader(http.StatusOK)
 }
 
 func isStaticAsset(u string) bool {
