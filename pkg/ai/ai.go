@@ -27,11 +27,30 @@ type AIAgent interface {
 	Analyze(req burp.BurpRequest) (*AIPlan, error)
 }
 
+// LoadKnowledge reads the custom user knowledge/training file
+func LoadKnowledge() string {
+	knowledgePath := os.ExpandEnv("$HOME/.config/autoscout/knowledge.md")
+	data, err := os.ReadFile(knowledgePath)
+	if err != nil {
+		// If file doesn't exist, create a default one with instructions
+		defaultKnowledge := "### User Training & Knowledge Base\n" +
+			"- Look for IDOR in /api/v1/user/ settings\n" +
+			"- Check for BOLA in UUID parameters\n" +
+			"- Inspect 'state' parameters for OAuth misconfigurations\n"
+
+		configDir := os.ExpandEnv("$HOME/.config/autoscout")
+		os.MkdirAll(configDir, 0755)
+		os.WriteFile(knowledgePath, []byte(defaultKnowledge), 0644)
+		return defaultKnowledge
+	}
+	return string(data)
+}
+
 // LoadBackend reads the user-config.yaml and returns the chosen AI backend
 func LoadBackend() AIAgent {
 	settingsPath := os.ExpandEnv("$HOME/.config/autoscout/user-config.yaml")
 	data, err := os.ReadFile(settingsPath)
-	
+
 	agentType := "Ollama" // Default
 	if err == nil {
 		var config struct {

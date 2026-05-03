@@ -1,23 +1,40 @@
 # Autoscout
-A Recon Server with several other functionalities
+A comprehensive Recon & Vulnerability Analysis Framework with AI-driven orchestration.
 
-currently the web server can perform search for subdomains and send it to your desired app using notify
-modify and copy the [provider config](https://github.com/projectdiscovery/notify#provider-config) to `$HOME/.config/notify/provider-config.yaml`
+Autoscout automates popular bug bounty hunting tools into a unified platform, featuring deep integration with Burp Suite and AI-powered reasoning backends (Ollama, Gemini, Codex).
+
+### Core Features
+- **AI Orchestrator**: Uses LLMs to analyze HTTP traffic and decide which security tools to run (Dalfox, SQLMap, Nuclei, FFUF, etc.).
+- **Burp Suite Integration**: Seamlessly captures traffic from Burp and feeds it into the AI analysis pipeline.
+- **Deep Traffic Analysis**: Captures full HTTP context, including Method, URL, Headers, and Body (Base64 decoded).
+- **Stealth & Rate Limiting**: AI-managed rate limiting to prevent IP blocking on major platforms.
+- **AI Training (Knowledge Base)**: Customize the AI's reasoning by adding your own expertise and heuristics to `~/.config/autoscout/knowledge.md`.
+- **Dynamic Wordlist Resolution**: Automatically finds or generates wordlists for fuzzing tools.
+- **Multi-Mode Operation**:
+  - **Daemon Mode**: Continuous automated scanning.
+  - **SSH Mode**: Access the GUI and control center over SSH (port 2222).
+  - **GUI Mode**: Interactive Terminal UI for real-time monitoring.
 
 ### Installation
-you can install this from command line using go install -v github.com/HaythmKenway/autoscout@latest
+```bash
+go install -v github.com/HaythmKenway/autoscout@latest
+```
 
-Setup the following webclient [Autoscout-web-client](https://github.com/HaythmKenway/autoscout-client)
-The project consists of Automating all the popular bug bounty hunting tool into a single packed framework to make it easy for pentesters
+### Configuration
+1. **Notify**: Setup `$HOME/.config/notify/provider-config.yaml`.
+2. **User Config**: Global settings at `$HOME/.config/autoscout/user-config.yaml`.
+3. **AI Training**: Add your custom heuristics to `$HOME/.config/autoscout/knowledge.md`.
 
-Currently I have planned 3 modes of operation for the application
+### Project Status
+- [x] Subdomain Enumeration & Tracking
+- [x] Discord/Slack Notifications
+- [x] Burp Suite Extension for Traffic Ingestion
+- [x] AI-Powered Tool Selection & Execution
+- [x] Full HTTP Context Analysis (Headers/Body)
+- [x] Automated Rate Limiting & Stealth
+- [x] Custom Knowledge Base for AI Training
+- [ ] Validating and Processing all the URLs
+- [ ] Port Scanning & Service Discovery
 
-Deamon mode                  ->  performs the programmed scans on specified intervals
-Command line operation mode  -> Use `autoscout -h` to view all commands  
-SSh Connection               -> By default the ssh server runs at  @ 0.0.0.0:2222
-### Project Milestone
-- [x] Subdomain Enumeration
-- [x] Notifying New targets to discord server
-- [ ] Validating and Processing all the urls
-- [ ] Validating Ports on Identified servers
-.... much more comming soon
+---
+*Built for automation. Driven by AI.*

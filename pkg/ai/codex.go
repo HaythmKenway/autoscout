@@ -27,26 +27,39 @@ func (c *CodexBackend) Analyze(req burp.BurpRequest) (*AIPlan, error) {
 		bodyStr = "[Empty Body]"
 	}
 
+	headersJSON, _ := json.MarshalIndent(req.Headers, "", "  ")
+	userKnowledge := LoadKnowledge()
+
 	prompt := fmt.Sprintf(`You are an expert penetration tester. Analyze the following HTTP request for vulnerabilities.
 Method: %s
 URL: %s
 Source: %s
+Headers:
+%s
 Body: %s
 
+### User Training & Expertise:
+%s
+
 ### Instructions:
-1. **Analyze Body**: Carefully inspect the POST body or parameters for sensitive data or injection points.
+1. **Analyze Request**: Carefully inspect headers and the body for sensitive data or injection points. Check for interesting headers like Authorization, Cookies, or custom headers. Use the provided "User Training" to guide your analysis.
 2. **Rules for Tool Selection**:
    - API/GraphQL: If the URL contains '/api/' or 'graphql', DO NOT use web crawlers. Use nuclei or ffuf instead.
    - Parameters: If parameters are detected, use dalfox or sqlmap.
 
-3. **Output Format**: Output ONLY a JSON object with this exact structure:
+3. **Stealth and Rate Limiting**:
+   - ALWAYS include a "rate_limit" parameter in "params" for high-volume tools (ffuf, katana, gospider, nuclei).
+   - If the target is a major platform (e.g., reddit, google, github), set "rate_limit" to a low value (e.g., 5-10 requests per second) to avoid blocking.
+   - Example for FFUF on a sensitive target: {"tool": "ffuf", "target": "URL", "params": {"rate_limit": "5"}}
+
+4. **Output Format**: Output ONLY a JSON object with this exact structure:
 {
   "thinking": "Your detailed reasoning here.",
   "vulnerabilities_suspected": ["type1", "type2"],
-  "actions": [{"tool": "dalfox|sqlmap|nuclei|ffuf|arjun|katana|gospider|censys", "target": "string", "params": {"key": "val"}}],
+  "actions": [{"tool": "toolname", "target": "string", "params": {"key": "val"}}],
   "rewrite_rules": ["modified_body_base64_string_if_needed"]
 }
-No preamble, no markdown formatting. Just raw JSON.`, req.Method, req.URL, req.Tool, bodyStr)
+No preamble, no markdown formatting. Just raw JSON.`, req.Method, req.URL, req.Tool, string(headersJSON), bodyStr, userKnowledge)
 
 	// Use codex exec --json --ephemeral
 	args := []string{"exec", "--json", "--ephemeral", "--skip-git-repo-check", "--ask-for-approval", "never"}

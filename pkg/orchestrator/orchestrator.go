@@ -1,7 +1,10 @@
 package orchestrator
 
 import (
+	"encoding/base64"
 	"fmt"
+	"net/url"
+	"strings"
 
 	"github.com/HaythmKenway/autoscout/pkg/ai"
 	"github.com/HaythmKenway/autoscout/pkg/burp"
@@ -31,6 +34,9 @@ func (o *Orchestrator) Start() {
 func (o *Orchestrator) processRequest(req burp.BurpRequest) {
 	localUtils.Logger(fmt.Sprintf("[Plan Agent] Analyzing request: %s", req.URL), 1)
 	
+	decodedBody, _ := base64.StdEncoding.DecodeString(req.Body)
+	bodyStr := string(decodedBody)
+
 	plan, err := o.Agent.Analyze(req)
 	if err != nil {
 		localUtils.Logger(fmt.Sprintf("[Plan Agent] Analysis failed: %v", err), 2)
@@ -45,24 +51,39 @@ func (o *Orchestrator) processRequest(req burp.BurpRequest) {
 	for _, action := range plan.Actions {
 		localUtils.Logger(fmt.Sprintf("[Orchestrator] Triggering tool: %s on %s", action.Tool, action.Target), 1)
 		
+		rateLimit, _ := action.Params["rate_limit"].(string)
+
 		switch action.Tool {
 		case "dalfox":
-			go tools.RunDalfox(action.Target)
+			go tools.RunDalfox(action.Target, req.Method, bodyStr, req.Headers)
 		case "sqlmap":
-			// Reconstruct a simple raw request for sqlmap
-			raw := fmt.Sprintf("%s %s HTTP/1.1\nHost: %s\n\n%s", req.Method, req.URL, "target", req.Body)
+			// Reconstruct a proper raw request for sqlmap
+			u, _ := url.Parse(action.Target)
+			host := "target"
+			path := action.Target
+			if u != nil && u.Host != "" {
+				host = u.Host
+				path = u.RequestURI()
+			}
+			
+			var headerStr strings.Builder
+			for k, v := range req.Headers {
+				headerStr.WriteString(fmt.Sprintf("%s: %s\r\n", k, v))
+			}
+			
+			raw := fmt.Sprintf("%s %s HTTP/1.1\r\nHost: %s\r\n%s\r\n%s", req.Method, path, host, headerStr.String(), bodyStr)
 			go tools.RunSQLMap(action.Target, raw)
 		case "nuclei":
 			tags, _ := action.Params["tags"].(string)
-			go tools.RunNuclei(action.Target, tags)
+			go tools.RunNuclei(action.Target, tags, rateLimit)
 		case "katana":
-			go tools.RunKatana(action.Target)
+			go tools.RunKatana(action.Target, rateLimit)
 		case "ffuf":
-			go tools.RunFFUF(action.Target)
+			go tools.RunFFUF(action.Target, req.Method, bodyStr, req.Headers, rateLimit)
 		case "arjun":
-			go tools.RunArjun(action.Target)
+			go tools.RunArjun(action.Target, req.Method, bodyStr, req.Headers)
 		case "gospider":
-			go tools.RunGoSpider(action.Target)
+			go tools.RunGoSpider(action.Target, rateLimit)
 		case "censys":
 			go tools.RunCensys(action.Target)
 		}

@@ -105,6 +105,13 @@ public class AutoscoutHttpHandler implements HttpHandler {
             payload.addProperty("url", message.request().url());
             payload.addProperty("method", message.request().method());
             payload.addProperty("tool", "MANUAL");
+
+            JsonObject headers = new JsonObject();
+            for (HttpHeader header : message.request().headers()) {
+                headers.addProperty(header.name(), header.value());
+            }
+            payload.add("headers", headers);
+
             payload.addProperty("request_body", Base64.getEncoder().encodeToString(message.request().body().getBytes()));
             
             if (message.hasResponse()) {
@@ -146,6 +153,13 @@ public class AutoscoutHttpHandler implements HttpHandler {
             payload.addProperty("url", req.url());
             payload.addProperty("method", req.method());
             payload.addProperty("tool", tool);
+
+            JsonObject headers = new JsonObject();
+            for (HttpHeader header : req.headers()) {
+                headers.addProperty(header.name(), header.value());
+            }
+            payload.add("headers", headers);
+
             payload.addProperty("body", Base64.getEncoder().encodeToString(req.body().getBytes()));
 
             try (OutputStream os = conn.getOutputStream()) {
@@ -180,6 +194,13 @@ public class AutoscoutHttpHandler implements HttpHandler {
             JsonObject payload = new JsonObject();
             payload.addProperty("status", resp.statusCode());
             payload.addProperty("tool", tool);
+
+            JsonObject headers = new JsonObject();
+            for (HttpHeader header : resp.headers()) {
+                headers.addProperty(header.name(), header.value());
+            }
+            payload.add("headers", headers);
+
             payload.addProperty("body", Base64.getEncoder().encodeToString(resp.body().getBytes()));
 
             try (OutputStream os = conn.getOutputStream()) {

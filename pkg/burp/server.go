@@ -16,16 +16,18 @@ import (
 )
 
 type BurpRequest struct {
-	URL    string `json:"url"`
-	Method string `json:"method"`
-	Tool   string `json:"tool"`
-	Body   string `json:"body"` // Base64 encoded
+	URL     string            `json:"url"`
+	Method  string            `json:"method"`
+	Tool    string            `json:"tool"`
+	Headers map[string]string `json:"headers"`
+	Body    string            `json:"body"` // Base64 encoded
 }
 
 type BurpResponse struct {
-	Status int    `json:"status"`
-	Tool   string `json:"tool"`
-	Body   string `json:"body"` // Base64 encoded
+	Status  int               `json:"status"`
+	Tool    string            `json:"tool"`
+	Headers map[string]string `json:"headers"`
+	Body    string            `json:"body"` // Base64 encoded
 }
 
 type BurpModified struct {
@@ -34,12 +36,13 @@ type BurpModified struct {
 }
 
 type BurpManualRequest struct {
-	URL          string `json:"url"`
-	Method       string `json:"method"`
-	Tool         string `json:"tool"`
-	RequestBody  string `json:"request_body"`  // Base64 encoded
-	Status       int    `json:"status"`        // Optional
-	ResponseBody string `json:"response_body"` // Base64 encoded, Optional
+	URL          string            `json:"url"`
+	Method       string            `json:"method"`
+	Tool         string            `json:"tool"`
+	Headers      map[string]string `json:"headers"`
+	RequestBody  string            `json:"request_body"`  // Base64 encoded
+	Status       int               `json:"status"`        // Optional
+	ResponseBody string            `json:"response_body"` // Base64 encoded, Optional
 }
 
 var (
@@ -326,10 +329,11 @@ func handleManual(w http.ResponseWriter, r *http.Request) {
 	// Send to Orchestrator as a normal request but maybe we should flag it as high priority later
 	if WorkQueue != nil {
 		WorkQueue <- BurpRequest{
-			URL: req.URL,
-			Method: req.Method,
-			Tool: req.Tool,
-			Body: req.RequestBody,
+			URL:     req.URL,
+			Method:  req.Method,
+			Tool:    req.Tool,
+			Headers: req.Headers,
+			Body:    req.RequestBody,
 		}
 	}
 
