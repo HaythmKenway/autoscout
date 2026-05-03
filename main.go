@@ -14,6 +14,7 @@ import (
 	"github.com/HaythmKenway/autoscout/internal/controller"
 	"github.com/HaythmKenway/autoscout/internal/db"
 	"github.com/HaythmKenway/autoscout/internal/scheduler"
+	"github.com/HaythmKenway/autoscout/pkg/burp"
 	gui_module "github.com/HaythmKenway/autoscout/pkg/gui"
 	"github.com/HaythmKenway/autoscout/pkg/httpx"
 	"github.com/HaythmKenway/autoscout/pkg/localUtils"
@@ -37,10 +38,16 @@ func main() {
 	spi := flag.String("spider", "", "Run spider")
 	gui := flag.Bool("g", false, "Start GUI")
 	sshMode := flag.Bool("ssh", false, "Start sshserver")
+	burpMode := flag.Bool("burp", false, "Start Burp Suite Integration API")
+	burpPort := flag.String("port", "8081", "Port for Burp Integration API")
 
 	flag.Parse()
 
 	controller.Init()
+
+	if *burpMode {
+		go burp.StartServer(*burpPort)
+	}
 
 	if *sshMode {
 		sshdeeznuts()
@@ -83,11 +90,17 @@ func main() {
 			localUtils.Logger(fmt.Sprintf("GUI failed: %v", err), 2)
 			fmt.Printf("Error starting GUI: %v\n", err)
 		}
+		return
 	}
 
 	if *deamon {
 		localUtils.Logger("Starting application in deamon mode", 1)
 		scheduler.Skibbidi(true)
+		select {}
+	}
+
+	if *burpMode && !*gui && !*deamon {
+		fmt.Printf("Burp Integration API running on port %s. Press Ctrl+C to stop.\n", *burpPort)
 		select {}
 	}
 }
