@@ -36,6 +36,8 @@ func (m *analysisModel) AddEntry(entry string) {
 		styledEntry = lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Render(entry)
 	} else if strings.Contains(entry, "[AI Fleet]") {
 		styledEntry = lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Italic(true).Render(entry)
+	} else if strings.HasPrefix(entry, "AI THINKING:") {
+		styledEntry = lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Italic(true).Render(entry)
 	} else if strings.HasPrefix(entry, "REQ:") {
 		styledEntry = lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Render(entry)
 	}

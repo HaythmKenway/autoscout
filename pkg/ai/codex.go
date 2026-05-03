@@ -2,6 +2,7 @@ package ai
 
 import (
 	"bufio"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os/exec"
@@ -20,25 +21,32 @@ func NewCodexBackend(model string) *CodexBackend {
 }
 
 func (c *CodexBackend) Analyze(req burp.BurpRequest) (*AIPlan, error) {
+	decodedBody, _ := base64.StdEncoding.DecodeString(req.Body)
+	bodyStr := string(decodedBody)
+	if bodyStr == "" {
+		bodyStr = "[Empty Body]"
+	}
+
 	prompt := fmt.Sprintf(`You are an expert penetration tester. Analyze the following HTTP request for vulnerabilities.
 Method: %s
 URL: %s
 Source: %s
 Body: %s
 
-### Rules for Tool Selection:
-1. **API/GraphQL**: If the URL contains '/api/' or 'graphql', DO NOT use web crawlers (gospider, katana). Use nuclei or ffuf instead.
-2. **Parameters**: If parameters are detected, use dalfox (for XSS) or sqlmap (for SQLi).
-3. **Censys**: Only use if you see an IP address or want to check for exposed services on a new domain.
+### Instructions:
+1. **Analyze Body**: Carefully inspect the POST body or parameters for sensitive data or injection points.
+2. **Rules for Tool Selection**:
+   - API/GraphQL: If the URL contains '/api/' or 'graphql', DO NOT use web crawlers. Use nuclei or ffuf instead.
+   - Parameters: If parameters are detected, use dalfox or sqlmap.
 
-Identify risks like SQLi, XSS, SSRF, IDOR, or Auth Bypass.
-Output ONLY a JSON object with this exact structure:
+3. **Output Format**: Output ONLY a JSON object with this exact structure:
 {
+  "thinking": "Your detailed reasoning here.",
   "vulnerabilities_suspected": ["type1", "type2"],
   "actions": [{"tool": "dalfox|sqlmap|nuclei|ffuf|arjun|katana|gospider|censys", "target": "string", "params": {"key": "val"}}],
   "rewrite_rules": ["modified_body_base64_string_if_needed"]
 }
-No preamble, no markdown formatting. Just raw JSON.`, req.Method, req.URL, req.Tool, req.Body)
+No preamble, no markdown formatting. Just raw JSON.`, req.Method, req.URL, req.Tool, bodyStr)
 
 	// Use codex exec --json --ephemeral
 	args := []string{"exec", "--json", "--ephemeral", "--skip-git-repo-check", "--ask-for-approval", "never"}

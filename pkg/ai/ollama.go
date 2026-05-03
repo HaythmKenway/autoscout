@@ -2,6 +2,7 @@ package ai
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -38,27 +39,34 @@ func NewOllamaBackend(baseURL, model string) *OllamaBackend {
 }
 
 func (o *OllamaBackend) Analyze(req burp.BurpRequest) (*AIPlan, error) {
+	decodedBody, _ := base64.StdEncoding.DecodeString(req.Body)
+	bodyStr := string(decodedBody)
+	if bodyStr == "" {
+		bodyStr = "[Empty Body]"
+	}
+
 	prompt := fmt.Sprintf(`Analyze the following HTTP request for security vulnerabilities.
 Method: %s
 URL: %s
 Tool Source: %s
 Body: %s
 
-### Rules for Tool Selection:
-1. **API/GraphQL**: If the URL contains '/api/' or 'graphql', DO NOT use web crawlers (gospider, katana). Use nuclei or ffuf instead.
-2. **Parameters**: If parameters are detected, use dalfox (for XSS) or sqlmap (for SQLi).
-3. **Censys**: Only use if you see an IP address or want to check for exposed services on a new domain.
+### Instructions:
+1. **Analyze Body**: Carefully inspect the POST body or parameters for sensitive data, injection points, or complex logic.
+2. **Rules for Tool Selection**:
+   - API/GraphQL: If the URL contains '/api/' or 'graphql', DO NOT use web crawlers (gospider, katana). Use nuclei or ffuf instead.
+   - Parameters: If parameters are detected, use dalfox (for XSS) or sqlmap (for SQLi).
+   - Censys: Only use if you see an IP address or want to check for exposed services on a new domain.
 
-Think step-by-step about possible bugs like XSS, SQLi, SSRF, IDOR, or API misconfigurations.
-Provide your analysis in STRICT JSON format with the following keys:
-- vulnerabilities_suspected: [list of strings]
-- actions: [list of {"tool": "dalfox|sqlmap|nuclei|ffuf|arjun|katana|gospider", "target": "url", "params": {"key": "val"}}]
-- rewrite_rules: [list of strings for future modifications]
+3. **Output Format**: Provide your analysis in STRICT JSON format with these keys:
+   - thinking: A detailed, step-by-step reasoning of your analysis. Explain WHY you suspect certain bugs.
+   - vulnerabilities_suspected: [list of strings]
+   - actions: [list of {"tool": "dalfox|sqlmap|nuclei|ffuf|arjun|katana|gospider", "target": "url", "params": {"key": "val"}}]
+   - rewrite_rules: [list of strings for future modifications]
 
 Example Action for SQLMap: {"tool": "sqlmap", "target": "URL", "params": {"batch": "true", "risk": "3"}}
-Example Action for DalFox: {"tool": "dalfox", "target": "URL", "params": {"args": "--mining-dict"}}
 
-Only output the JSON object. No preamble.`, req.Method, req.URL, req.Tool, req.Body)
+Only output the JSON object. No preamble.`, req.Method, req.URL, req.Tool, bodyStr)
 
 	ollamaReq := ollamaRequest{
 		Model:  o.Model,

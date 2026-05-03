@@ -37,6 +37,11 @@ func (o *Orchestrator) processRequest(req burp.BurpRequest) {
 		return
 	}
 
+	// Log AI Thinking
+	if plan.Thinking != "" {
+		addAnalysis(fmt.Sprintf("AI THINKING: %s", plan.Thinking))
+	}
+
 	for _, action := range plan.Actions {
 		localUtils.Logger(fmt.Sprintf("[Orchestrator] Triggering tool: %s on %s", action.Tool, action.Target), 1)
 		

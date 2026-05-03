@@ -16,6 +16,7 @@ type AIAction struct {
 
 // AIPlan is the structured output from the LLM
 type AIPlan struct {
+	Thinking                 string     `json:"thinking"`
 	VulnerabilitiesSuspected []string   `json:"vulnerabilities_suspected"`
 	Actions                  []AIAction `json:"actions"`
 	RewriteRules             []string   `json:"rewrite_rules"`
