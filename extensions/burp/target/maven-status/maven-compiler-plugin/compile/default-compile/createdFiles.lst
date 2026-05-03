@@ -1,4 +1,6 @@
 com/autoscout/burp/AutoscoutExtension.class
 com/autoscout/burp/AutoscoutContextMenu.class
+com/autoscout/burp/AutoscoutCallbackServer.class
+com/autoscout/burp/AutoscoutCallbackServer$IssueHandler.class
 com/autoscout/burp/AutoscoutHttpHandler.class
 com/autoscout/burp/AutoscoutTab.class

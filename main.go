@@ -47,9 +47,9 @@ func main() {
 
 	controller.Init()
 
-	// Initialize AI Fleet (Ollama)
-	ollama := ai.NewOllamaBackend("", "llama3.2:latest")
-	orch := orchestrator.NewOrchestrator(ollama)
+	// Initialize AI Fleet from settings
+	backend := ai.LoadBackend()
+	orch := orchestrator.NewOrchestrator(backend)
 	go orch.Start()
 
 	if *burpMode {

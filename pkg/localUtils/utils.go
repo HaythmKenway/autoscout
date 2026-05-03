@@ -1,7 +1,10 @@
 package localUtils
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -91,6 +94,22 @@ func Logger(str string, sc int) {
 	f.WriteString(line)
 	f.Sync()
 }
+func ReportToBurp(name, detail, severity string) {
+	url := "http://127.0.0.1:8082/issue"
+	
+	payload := map[string]string{
+		"name":     name,
+		"detail":   detail,
+		"severity": severity,
+	}
+	
+	jsonData, _ := json.Marshal(payload)
+	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
+	if err == nil {
+		resp.Body.Close()
+	}
+}
+
 func RemoveDuplicates(arr []string) []string {
 	uniqueMap := make(map[string]struct{})
 	for _, elem := range arr {

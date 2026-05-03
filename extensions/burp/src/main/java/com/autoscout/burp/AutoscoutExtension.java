@@ -20,6 +20,10 @@ public class AutoscoutExtension implements BurpExtension {
         AutoscoutContextMenu menuProvider = new AutoscoutContextMenu(api, uiTab, httpHandler);
         api.userInterface().registerContextMenuItemsProvider(menuProvider);
 
+        // API Server for callbacks from Go tool
+        AutoscoutCallbackServer callbackServer = new AutoscoutCallbackServer(api, uiTab);
+        callbackServer.start(8082); // Dedicated port for tool -> Burp callbacks
+
         api.logging().logToOutput("Autoscout Burp loaded successfully.");
     }
 }
