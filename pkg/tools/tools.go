@@ -3,8 +3,10 @@ package tools
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/HaythmKenway/autoscout/internal/db"
 	"github.com/HaythmKenway/autoscout/pkg/localUtils"
@@ -43,6 +45,47 @@ func RunDalfox(target string) {
 	}
 }
 
+func RunSQLMap(targetURL string, rawRequest string) {
+	dir := localUtils.GetWorkingDirectory()
+	reqFile := fmt.Sprintf("%s/sqlmap_req_%d.txt", dir, time.Now().Unix())
+	
+	err := os.WriteFile(reqFile, []byte(rawRequest), 0644)
+	if err != nil {
+		localUtils.Logger(fmt.Sprintf("[SQLMap] Failed to write request file: %v", err), 2)
+		return
+	}
+
+	localUtils.Logger(fmt.Sprintf("[Tool] Starting SQLMap on %s (Req: %s)", targetURL, reqFile), 1)
+	
+	// sqlmap -r <file> --batch --random-agent --level 1 --risk 1
+	cmd := exec.Command("sqlmap", "-r", reqFile, "--batch", "--random-agent")
+	output, _ := cmd.CombinedOutput()
+	
+	// Basic parsing for demo; in production, use --json or parse logs
+	if strings.Contains(string(output), "is vulnerable") || strings.Contains(string(output), "confirming") {
+		database, _ := db.OpenDatabase()
+		defer database.Close()
+		db.AddVulnerability(database, targetURL, "SQL Injection", "See "+reqFile, "SQLMap", "Critical")
+		localUtils.Logger(fmt.Sprintf("[AI ALERT] SQLMap confirmed vulnerability at %s", targetURL), 1)
+	}
+}
+
+func RunNuclei(target string, tags string) {
+	localUtils.Logger(fmt.Sprintf("[Tool] Starting Nuclei scan on %s (Tags: %s)", target, tags), 1)
+	
+	args := []string{"-u", target, "-json-export", "/tmp/nuclei_out.json"}
+	if tags != "" {
+		args = append(args, "-tags", tags)
+	} else {
+		args = append(args, "-as") // Automatic scan if no tags
+	}
+
+	cmd := exec.Command("nuclei", args...)
+	cmd.Run() // Run in background
+
+	// Logic to parse nuclei_out.json and add to DB would go here
+}
+
 func RunFFUF(target string) {
 	localUtils.Logger(fmt.Sprintf("[Tool] Starting FFUF discovery on %s", target), 1)
 	// Example: ffuf -u target/FUZZ -w wordlist.txt
@@ -56,6 +99,13 @@ func RunArjun(target string) {
 func RunGoSpider(target string) {
 	localUtils.Logger(fmt.Sprintf("[Tool] Starting GoSpider crawl on %s", target), 1)
 	// Example: gospider -s target
+}
+
+func RunCensys(target string) {
+	localUtils.Logger(fmt.Sprintf("[Tool] Starting Censys investigation on %s", target), 1)
+	// Example: censys search "ip:1.1.1.1" or "domain:example.com"
+	cmd := exec.Command("censys", "search", target)
+	cmd.Run()
 }
 
 func RunKatana(target string) {

@@ -43,11 +43,32 @@ func (o *Orchestrator) processRequest(req burp.BurpRequest) {
 		switch action.Tool {
 		case "dalfox":
 			go tools.RunDalfox(action.Target)
+		case "sqlmap":
+			// Reconstruct a simple raw request for sqlmap
+			raw := fmt.Sprintf("%s %s HTTP/1.1\nHost: %s\n\n%s", req.Method, req.URL, "target", req.Body)
+			go tools.RunSQLMap(action.Target, raw)
+		case "nuclei":
+			go tools.RunNuclei(action.Target, action.Params["tags"])
 		case "katana":
 			go tools.RunKatana(action.Target)
 		case "ffuf":
 			go tools.RunFFUF(action.Target)
-		// Add more cases for sqlmap, arjun, nuclei, etc.
+		case "arjun":
+			go tools.RunArjun(action.Target)
+		case "gospider":
+			go tools.RunGoSpider(action.Target)
+		case "censys":
+			go tools.RunCensys(action.Target)
 		}
 	}
+
+	for _, rule := range plan.RewriteRules {
+		localUtils.Logger(fmt.Sprintf("[Orchestrator] AI registered rewrite rule for: %s", req.URL), 1)
+		burp.AddAnalysis("AI: Registered automatic rewrite for this target")
+		burp.RegisterRewrite(req.URL, rule)
+	}
+}
+
+func addAnalysis(msg string) {
+	burp.AddAnalysis(msg)
 }

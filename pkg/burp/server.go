@@ -56,7 +56,27 @@ var (
 
 	// Orchestrator integration
 	WorkQueue chan BurpRequest
+
+	// AI Rewrite Registry (URL -> Modified Body)
+	RewriteRules map[string]string
 )
+
+func RegisterRewrite(url, newBody string) {
+	mu.Lock()
+	defer mu.Unlock()
+	if RewriteRules == nil {
+		RewriteRules = make(map[string]string)
+	}
+	RewriteRules[url] = newBody
+}
+
+func checkRewrite(url string) (string, bool) {
+	mu.Lock()
+	defer mu.Unlock()
+	if RewriteRules == nil { return "", false }
+	body, ok := RewriteRules[url]
+	return body, ok
+}
 
 func IsRunning() bool {
 	mu.Lock()
@@ -72,7 +92,7 @@ func GetStats() (int, int, []string) {
 	return RequestsIntercepted, ResponsesIntercepted, q
 }
 
-func addAnalysis(entry string) {
+func AddAnalysis(entry string) {
 	mu.Lock()
 	defer mu.Unlock()
 	AnalysisQueue = append(AnalysisQueue, entry)
@@ -185,9 +205,19 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 		WorkQueue <- req
 	}
 
+	// Apply AI Rewrite if exists
+	if modifiedBody, ok := checkRewrite(req.URL); ok {
+		localUtils.Logger("[AI] Applying active rewrite rule for this target", 1)
+		AddAnalysis("AI: Applied active rewrite rule to request")
+		resp := BurpModified{Modified: true, Body: modifiedBody}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+
 	// --- AI Heuristic Routing ---
 	if !isStaticAsset(req.URL) {
-		addAnalysis(fmt.Sprintf("[%s] REQ: %s %s", req.Tool, req.Method, req.URL))
+		AddAnalysis(fmt.Sprintf("[%s] REQ: %s %s", req.Tool, req.Method, req.URL))
 		
 		// Check for parameters (Potential SQLi/XSS/Fuzzing)
 		if strings.Contains(req.URL, "?") || len(decodedBody) > 0 {
@@ -204,7 +234,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 			localUtils.Logger("[AI] Detected 'fuzz-me' keyword. Modifying request...", 1)
 			fuzzed := strings.ReplaceAll(string(decodedBody), "fuzz-me", "AUTOSCOUT-FUZZED")
 			req.Body = base64.StdEncoding.EncodeToString([]byte(fuzzed))
-			addAnalysis("AI: Modified request body (keyword 'fuzz-me' detected)")
+			AddAnalysis("AI: Modified request body (keyword 'fuzz-me' detected)")
 			
 			resp := BurpModified{Modified: true, Body: req.Body}
 			w.Header().Set("Content-Type", "application/json")
@@ -249,7 +279,7 @@ func handleResponse(w http.ResponseWriter, r *http.Request) {
 
 	// --- AI Heuristic Routing ---
 	if resp.Status == 200 && len(decodedBody) > 0 {
-		addAnalysis(fmt.Sprintf("[%s] RES: Status %d (%d bytes)", resp.Tool, resp.Status, len(decodedBody)))
+		AddAnalysis(fmt.Sprintf("[%s] RES: Status %d (%d bytes)", resp.Tool, resp.Status, len(decodedBody)))
 		
 		// Check for sensitive info (PII/Secrets)
 		bodyStr := string(decodedBody)
@@ -258,7 +288,7 @@ func handleResponse(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if strings.Contains(strings.ToLower(bodyStr), "admin") {
-			addAnalysis("AI ALERT: 'admin' keyword detected in response body!")
+			AddAnalysis("AI ALERT: 'admin' keyword detected in response body!")
 		}
 	}
 
@@ -290,8 +320,8 @@ func handleManual(w http.ResponseWriter, r *http.Request) {
 	}
 
 	localUtils.Logger(fmt.Sprintf("[Burp -> MANUAL] High-Priority Analysis for %s", req.URL), 1)
-	addAnalysis("CRITICAL: Received Manual Investigation Task!")
-	addAnalysis(fmt.Sprintf("TARGET: %s %s", req.Method, req.URL))
+	AddAnalysis("CRITICAL: Received Manual Investigation Task!")
+	AddAnalysis(fmt.Sprintf("TARGET: %s %s", req.Method, req.URL))
 	
 	// Send to Orchestrator as a normal request but maybe we should flag it as high priority later
 	if WorkQueue != nil {
@@ -304,7 +334,7 @@ func handleManual(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.Status > 0 {
-		addAnalysis(fmt.Sprintf("STATUS: %d", req.Status))
+		AddAnalysis(fmt.Sprintf("STATUS: %d", req.Status))
 	}
 	
 	delegateToAgent("DeepScanner", req.URL)
@@ -325,5 +355,5 @@ func isStaticAsset(u string) bool {
 func delegateToAgent(agentName string, target string) {
 	msg := fmt.Sprintf("[AI Fleet] %s is investigating %s", agentName, target)
 	localUtils.Logger(msg, 1)
-	addAnalysis(msg)
+	AddAnalysis(msg)
 }
