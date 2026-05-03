@@ -11,23 +11,41 @@ public class AutoscoutTab {
     private final JTextArea logArea;
     private final JTextField apiEndpointField;
     private final JCheckBox enableIntegrationCheck;
+    private final JCheckBox enableProxyCheck;
+    private final JCheckBox enableRepeaterCheck;
+    private final JCheckBox enableIntruderCheck;
 
     public AutoscoutTab(MontoyaApi api) {
         mainPanel = new JPanel(new BorderLayout(10, 10));
         mainPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 
-        JPanel controlPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 10));
-        enableIntegrationCheck = new JCheckBox("Enable Autoscout Routing");
-        controlPanel.add(enableIntegrationCheck);
-        controlPanel.add(new JLabel("Autoscout API:"));
-        apiEndpointField = new JTextField("http://127.0.0.1:8081", 30);
-        controlPanel.add(apiEndpointField);
-
+        JPanel topPanel = new JPanel(new GridLayout(2, 1, 5, 5));
+        
+        // Row 1: Global and Endpoint
+        JPanel connectionPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 10));
+        enableIntegrationCheck = new JCheckBox("Global Enable");
+        enableIntegrationCheck.setSelected(true);
+        connectionPanel.add(enableIntegrationCheck);
+        connectionPanel.add(new JLabel("Autoscout API:"));
+        apiEndpointField = new JTextField("http://127.0.0.1:8081", 20);
+        connectionPanel.add(apiEndpointField);
         JButton testBtn = new JButton("Test Connection");
         testBtn.addActionListener(e -> testConnection());
-        controlPanel.add(testBtn);
+        connectionPanel.add(testBtn);
+        topPanel.add(connectionPanel);
 
-        mainPanel.add(controlPanel, BorderLayout.NORTH);
+        // Row 2: Tool Specific Toggles
+        JPanel toolsPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+        toolsPanel.add(new JLabel("Route Traffic From:"));
+        enableProxyCheck = new JCheckBox("Proxy", true);
+        enableRepeaterCheck = new JCheckBox("Repeater", true);
+        enableIntruderCheck = new JCheckBox("Intruder", false);
+        toolsPanel.add(enableProxyCheck);
+        toolsPanel.add(enableRepeaterCheck);
+        toolsPanel.add(enableIntruderCheck);
+        topPanel.add(toolsPanel);
+
+        mainPanel.add(topPanel, BorderLayout.NORTH);
 
         logArea = new JTextArea();
         logArea.setEditable(false);
@@ -40,6 +58,9 @@ public class AutoscoutTab {
 
     public Component getUiComponent() { return mainPanel; }
     public boolean isEnabled() { return enableIntegrationCheck.isSelected(); }
+    public boolean isProxyEnabled() { return enableProxyCheck.isSelected(); }
+    public boolean isRepeaterEnabled() { return enableRepeaterCheck.isSelected(); }
+    public boolean isIntruderEnabled() { return enableIntruderCheck.isSelected(); }
     public String getApiEndpoint() { return apiEndpointField.getText(); }
     public void log(String message) {
         SwingUtilities.invokeLater(() -> {

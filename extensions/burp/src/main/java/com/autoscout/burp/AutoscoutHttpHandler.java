@@ -40,6 +40,12 @@ public class AutoscoutHttpHandler implements HttpHandler {
         }
 
         String toolName = httpRequestToBeSent.toolSource().toolType().name();
+        
+        // Selective Routing
+        if (toolName.equals("PROXY") && !ui.isProxyEnabled()) return RequestToBeSentAction.continueWith(httpRequestToBeSent);
+        if (toolName.equals("REPEATER") && !ui.isRepeaterEnabled()) return RequestToBeSentAction.continueWith(httpRequestToBeSent);
+        if (toolName.equals("INTRUDER") && !ui.isIntruderEnabled()) return RequestToBeSentAction.continueWith(httpRequestToBeSent);
+
         HttpRequest modifiedRequest = sendToAutoscout("request", httpRequestToBeSent, toolName);
         if (modifiedRequest != null) {
             ui.log("[" + toolName + "] Request modified: " + httpRequestToBeSent.url());
@@ -55,6 +61,12 @@ public class AutoscoutHttpHandler implements HttpHandler {
         }
 
         String toolName = httpResponseReceived.toolSource().toolType().name();
+        
+        // Selective Routing
+        if (toolName.equals("PROXY") && !ui.isProxyEnabled()) return ResponseReceivedAction.continueWith(httpResponseReceived);
+        if (toolName.equals("REPEATER") && !ui.isRepeaterEnabled()) return ResponseReceivedAction.continueWith(httpResponseReceived);
+        if (toolName.equals("INTRUDER") && !ui.isIntruderEnabled()) return ResponseReceivedAction.continueWith(httpResponseReceived);
+
         HttpResponse modifiedResponse = sendToAutoscoutResponse("response", httpResponseReceived, toolName);
         if (modifiedResponse != null) {
             ui.log("[" + toolName + "] Response modified.");
