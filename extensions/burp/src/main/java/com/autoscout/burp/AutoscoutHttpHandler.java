@@ -76,10 +76,15 @@ public class AutoscoutHttpHandler implements HttpHandler {
     }
 
     public void sendManual(HttpRequestResponse message) {
-        if (apiEndpointInvalid()) return;
+        if (apiEndpointInvalid()) {
+            ui.log("[DEBUG] Manual send skipped: API endpoint invalid.");
+            return;
+        }
         
+        String endpoint = ui.getApiEndpoint() + "/manual";
         try {
-            URL url = new URL(ui.getApiEndpoint() + "/manual");
+            ui.log("[DEBUG] Attempting POST to " + endpoint);
+            URL url = new URL(endpoint);
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("POST");
             conn.setRequestProperty("Content-Type", "application/json");
@@ -101,11 +106,14 @@ public class AutoscoutHttpHandler implements HttpHandler {
                 os.write(input, 0, input.length);
             }
 
-            if (conn.getResponseCode() == 200) {
+            int code = conn.getResponseCode();
+            if (code == 200) {
                 ui.log("<- Autoscout acknowledged manual analysis.");
+            } else {
+                ui.log("!! Manual send failed. Server returned: " + code);
             }
         } catch (Exception e) {
-            ui.log("!! Manual send failed: " + e.getMessage());
+            ui.log("!! Manual send failed with exception: " + e.getMessage());
         }
     }
 

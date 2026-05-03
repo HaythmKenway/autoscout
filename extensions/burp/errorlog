@@ -24,21 +24,21 @@
 [[1;34mINFO[m] -------------------------------------------------------------
 [[1;31mERROR[m] COMPILATION ERROR : 
 [[1;34mINFO[m] -------------------------------------------------------------
-[[1;31mERROR[m] /home/akileswar/Documents/autoscout/extensions/burp/src/main/java/com/autoscout/burp/AutoscoutHttpHandler.java:[65,28] cannot find symbol
-  symbol:   class HttpRequestResponse
-  location: class com.autoscout.burp.AutoscoutHttpHandler
+[[1;31mERROR[m] /home/akileswar/Documents/autoscout/extensions/burp/src/main/java/com/autoscout/burp/AutoscoutContextMenu.java:[26,28] cannot find symbol
+  symbol:   method toolSource()
+  location: variable event of type burp.api.montoya.ui.contextmenu.ContextMenuEvent
 [[1;34mINFO[m] 1 error
 [[1;34mINFO[m] -------------------------------------------------------------
 [[1;34mINFO[m] [1m------------------------------------------------------------------------[m
 [[1;34mINFO[m] [1;31mBUILD FAILURE[m
 [[1;34mINFO[m] [1m------------------------------------------------------------------------[m
-[[1;34mINFO[m] Total time:  0.779 s
-[[1;34mINFO[m] Finished at: 2026-05-03T12:07:01+05:30
+[[1;34mINFO[m] Total time:  0.820 s
+[[1;34mINFO[m] Finished at: 2026-05-03T12:26:12+05:30
 [[1;34mINFO[m] [1m------------------------------------------------------------------------[m
 [[1;31mERROR[m] Failed to execute goal [32morg.apache.maven.plugins:maven-compiler-plugin:3.1:compile[m [1m(default-compile)[m on project [36mautoscout-burp[m: [1;31mCompilation failure[m
-[[1;31mERROR[m] [1;31m/home/akileswar/Documents/autoscout/extensions/burp/src/main/java/com/autoscout/burp/AutoscoutHttpHandler.java:[65,28] cannot find symbol[m
-[[1;31mERROR[m] [1;31m  symbol:   class HttpRequestResponse[m
-[[1;31mERROR[m] [1;31m  location: class com.autoscout.burp.AutoscoutHttpHandler[m
+[[1;31mERROR[m] [1;31m/home/akileswar/Documents/autoscout/extensions/burp/src/main/java/com/autoscout/burp/AutoscoutContextMenu.java:[26,28] cannot find symbol[m
+[[1;31mERROR[m] [1;31m  symbol:   method toolSource()[m
+[[1;31mERROR[m] [1;31m  location: variable event of type burp.api.montoya.ui.contextmenu.ContextMenuEvent[m
 [[1;31mERROR[m] [1;31m[m
 [[1;31mERROR[m] -> [1m[Help 1][m
 [[1;31mERROR[m] 

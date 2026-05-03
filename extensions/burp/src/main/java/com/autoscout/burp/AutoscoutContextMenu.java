@@ -23,17 +23,32 @@ public class AutoscoutContextMenu implements ContextMenuItemsProvider {
 
     @Override
     public List<Component> provideMenuItems(ContextMenuEvent event) {
+        String context = event.invocationType().name();
+        int selectedCount = (event.selectedRequestResponses() != null) ? event.selectedRequestResponses().size() : 0;
+        boolean hasEditorMessage = event.messageEditorRequestResponse().isPresent();
+        
+        ui.log(String.format("[DEBUG] Context Menu in %s. Selected: %d. Has Editor Msg: %b", context, selectedCount, hasEditorMessage));
+        
         List<Component> menuItems = new ArrayList<>();
 
         JMenuItem sendToAutoscout = new JMenuItem("Send to Autoscout");
         sendToAutoscout.addActionListener(e -> {
-            List<HttpRequestResponse> selectedMessages = event.selectedRequestResponses();
-            if (selectedMessages == null || selectedMessages.isEmpty()) {
+            List<HttpRequestResponse> toSend = new ArrayList<>();
+            
+            if (event.selectedRequestResponses() != null && !event.selectedRequestResponses().isEmpty()) {
+                toSend.addAll(event.selectedRequestResponses());
+            } else if (event.messageEditorRequestResponse().isPresent()) {
+                toSend.add(event.messageEditorRequestResponse().get().requestResponse());
+            }
+
+            if (toSend.isEmpty()) {
+                ui.log("[DEBUG] No messages found to send in current context.");
                 return;
             }
 
+            ui.log("[DEBUG] Clicked 'Send to Autoscout' for " + toSend.size() + " items.");
             new Thread(() -> {
-                for (HttpRequestResponse message : selectedMessages) {
+                for (HttpRequestResponse message : toSend) {
                     ui.log("[MANUAL] Sending selected request to Autoscout: " + message.request().url());
                     handler.sendManual(message);
                 }

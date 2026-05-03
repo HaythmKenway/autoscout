@@ -6,7 +6,7 @@ import burp.api.montoya.MontoyaApi;
 public class AutoscoutExtension implements BurpExtension {
     @Override
     public void initialize(MontoyaApi api) {
-        api.extension().setName("Autoscout Integration");
+        api.extension().setName("Autoscout");
 
         // UI Tab
         AutoscoutTab uiTab = new AutoscoutTab(api);
@@ -20,6 +20,6 @@ public class AutoscoutExtension implements BurpExtension {
         AutoscoutContextMenu menuProvider = new AutoscoutContextMenu(api, uiTab, httpHandler);
         api.userInterface().registerContextMenuItemsProvider(menuProvider);
 
-        api.logging().logToOutput("Autoscout Burp Integration loaded successfully.");
+        api.logging().logToOutput("Autoscout Burp loaded successfully.");
     }
 }
