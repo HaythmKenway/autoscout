@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 func GetWorkingDirectory() string {
@@ -108,6 +110,24 @@ func ReportToBurp(name, detail, severity string) {
 	if err == nil {
 		resp.Body.Close()
 	}
+}
+
+func GetProxyURL() string {
+	settingsPath := os.ExpandEnv("$HOME/.config/autoscout/user-config.yaml")
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		return "http://127.0.0.1:8080"
+	}
+	var config struct {
+		Settings struct {
+			ProxyURL string `yaml:"proxy_url"`
+		} `yaml:"settings"`
+	}
+	yaml.Unmarshal(data, &config)
+	if config.Settings.ProxyURL == "" {
+		return "http://127.0.0.1:8080"
+	}
+	return config.Settings.ProxyURL
 }
 
 func RemoveDuplicates(arr []string) []string {

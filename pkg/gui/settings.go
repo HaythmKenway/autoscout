@@ -61,6 +61,7 @@ func NewSettingsModel(width int, height int) settingsModel {
 	userSettings := &settingsConfig.Settings
 	if userSettings.Theme == "" { userSettings.Theme = "Modern" }
 	if userSettings.Agent == "" { userSettings.Agent = "Gemini" }
+	if userSettings.ProxyURL == "" { userSettings.ProxyURL = "http://127.0.0.1:8080" }
 
 	// UI Options
 	themes := []string{"Modern", "Neon", "Matrix"}
@@ -89,13 +90,20 @@ func NewSettingsModel(width int, height int) settingsModel {
 	di.CharLimit = 256
 	di.Width = 40
 
+	// Proxy Input
+	pi := textinput.New()
+	pi.Placeholder = "http://127.0.0.1:8080"
+	pi.SetValue(userSettings.ProxyURL)
+	pi.CharLimit = 128
+	pi.Width = 30
+
 	return settingsModel{
 		activeCat:     CatUI,
 		themeOptions:  themes,
 		themeCursor:   tCursor,
 		agentOptions:  agents,
 		agentCursor:   aCursor,
-		discordInputs: []textinput.Model{di},
+		discordInputs: []textinput.Model{di, pi},
 		width:         width,
 		height:        height,
 		discordModel:  discordModel,
@@ -184,12 +192,14 @@ func (m *settingsModel) save() {
 	// Sync UI State to UserSettings
 	m.userSettings.Theme = m.themeOptions[m.themeCursor]
 	m.userSettings.Agent = m.agentOptions[m.agentCursor]
+	m.userSettings.ProxyURL = m.discordInputs[1].Value()
 	m.discordModel.DiscordWebhookURL = m.discordInputs[0].Value()
 
 	// Persist to Disk
 	storetodb(m.discordModel, "Dwebhook", m.discordModel.DiscordWebhookURL)
 	updateSettingsConfig("theme", m.userSettings.Theme)
 	updateSettingsConfig("agent", m.userSettings.Agent)
+	updateSettingsConfig("proxy", m.userSettings.ProxyURL)
 	localUtils.Logger("Settings persisted to disk", 1)
 }
 
@@ -345,6 +355,8 @@ func updateSettingsConfig(key string, value string) {
 		config.Settings.Agent = value
 	case "theme":
 		config.Settings.Theme = value
+	case "proxy":
+		config.Settings.ProxyURL = value
 	}
 
 	writeSettingsConfig(filePath, config)
@@ -390,6 +402,7 @@ type Settings struct {
 	Agent         string `yaml:"agent"`
 	Data          string `yaml:"data"`
 	Theme         string `yaml:"theme"`
+	ProxyURL      string `yaml:"proxy_url"`
 }
 
 type DiscordConfig struct {

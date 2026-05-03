@@ -48,8 +48,9 @@ type DalfoxResult struct {
 }
 
 func RunDalfox(target string) {
-	localUtils.Logger(fmt.Sprintf("[Tool] Starting DalFox scan on %s", target), 1)
-	cmd := exec.Command("dalfox", "url", target, "--format", "json")
+	proxy := localUtils.GetProxyURL()
+	localUtils.Logger(fmt.Sprintf("[Tool] Starting DalFox scan on %s (Proxy: %s)", target, proxy), 1)
+	cmd := exec.Command("dalfox", "url", target, "--format", "json", "--proxy", proxy)
 	
 	runWithLogs("DalFox", cmd, func(output string) {
 		lines := strings.Split(output, "\n")
@@ -69,6 +70,7 @@ func RunDalfox(target string) {
 }
 
 func RunSQLMap(targetURL string, rawRequest string) {
+	proxy := localUtils.GetProxyURL()
 	dir := localUtils.GetWorkingDirectory()
 	reqFile := fmt.Sprintf("%s/sqlmap_req_%d.txt", dir, time.Now().Unix())
 	
@@ -78,8 +80,8 @@ func RunSQLMap(targetURL string, rawRequest string) {
 		return
 	}
 
-	localUtils.Logger(fmt.Sprintf("[Tool] Starting SQLMap on %s", targetURL), 1)
-	cmd := exec.Command("sqlmap", "-r", reqFile, "--batch", "--random-agent", "--level", "1", "--risk", "1")
+	localUtils.Logger(fmt.Sprintf("[Tool] Starting SQLMap on %s (Proxy: %s)", targetURL, proxy), 1)
+	cmd := exec.Command("sqlmap", "-r", reqFile, "--batch", "--random-agent", "--level", "1", "--risk", "1", "--proxy", proxy)
 	
 	runWithLogs("SQLMap", cmd, func(output string) {
 		if strings.Contains(output, "is vulnerable") {
@@ -93,8 +95,9 @@ func RunSQLMap(targetURL string, rawRequest string) {
 }
 
 func RunNuclei(target string, tags string) {
-	localUtils.Logger(fmt.Sprintf("[Tool] Starting Nuclei scan on %s", target), 1)
-	args := []string{"-u", target, "-silent", "-nc"}
+	proxy := localUtils.GetProxyURL()
+	localUtils.Logger(fmt.Sprintf("[Tool] Starting Nuclei scan on %s (Proxy: %s)", target, proxy), 1)
+	args := []string{"-u", target, "-silent", "-nc", "-proxy", proxy}
 	if tags != "" {
 		args = append(args, "-tags", tags)
 	} else {
@@ -106,14 +109,15 @@ func RunNuclei(target string, tags string) {
 }
 
 func RunFFUF(target string) {
-	localUtils.Logger(fmt.Sprintf("[Tool] Starting FFUF on %s", target), 1)
+	proxy := localUtils.GetProxyURL()
+	localUtils.Logger(fmt.Sprintf("[Tool] Starting FFUF on %s (Proxy: %s)", target, proxy), 1)
 	wordlist := "/usr/share/wordlists/dirb/common.txt"
 	if _, err := os.Stat(wordlist); err != nil {
 		localUtils.Logger("[FFUF] Wordlist not found, skipping", 2)
 		return
 	}
 	
-	cmd := exec.Command("ffuf", "-u", target+"/FUZZ", "-w", wordlist, "-s")
+	cmd := exec.Command("ffuf", "-u", target+"/FUZZ", "-w", wordlist, "-s", "-x", proxy)
 	runWithLogs("FFUF", cmd, func(output string) {
 		lines := strings.Split(output, "\n")
 		database, _ := db.OpenDatabase()
@@ -127,20 +131,23 @@ func RunFFUF(target string) {
 }
 
 func RunArjun(target string) {
-	localUtils.Logger(fmt.Sprintf("[Tool] Starting Arjun on %s", target), 1)
-	cmd := exec.Command("arjun", "-u", target, "--quiet")
+	proxy := localUtils.GetProxyURL()
+	localUtils.Logger(fmt.Sprintf("[Tool] Starting Arjun on %s (Proxy: %s)", target, proxy), 1)
+	cmd := exec.Command("arjun", "-u", target, "--quiet", "--proxy", proxy)
 	runWithLogs("Arjun", cmd, nil)
 }
 
 func RunGoSpider(target string) {
-	localUtils.Logger(fmt.Sprintf("[Tool] Starting GoSpider on %s", target), 1)
-	cmd := exec.Command("gospider", "-s", target, "--quiet")
+	proxy := localUtils.GetProxyURL()
+	localUtils.Logger(fmt.Sprintf("[Tool] Starting GoSpider on %s (Proxy: %s)", target, proxy), 1)
+	cmd := exec.Command("gospider", "-s", target, "--quiet", "-p", proxy)
 	runWithLogs("GoSpider", cmd, nil)
 }
 
 func RunKatana(target string) {
-	localUtils.Logger(fmt.Sprintf("[Tool] Starting Katana on %s", target), 1)
-	cmd := exec.Command("katana", "-u", target, "-silent")
+	proxy := localUtils.GetProxyURL()
+	localUtils.Logger(fmt.Sprintf("[Tool] Starting Katana on %s (Proxy: %s)", target, proxy), 1)
+	cmd := exec.Command("katana", "-u", target, "-silent", "-proxy", proxy)
 	
 	runWithLogs("Katana", cmd, func(output string) {
 		database, _ := db.OpenDatabase()
