@@ -44,7 +44,7 @@ func (o *OllamaBackend) Name() string {
 
 func (o *OllamaBackend) Analyze(req burp.BurpRequest) (*AIPlan, error) {
 	decodedBody, _ := base64.StdEncoding.DecodeString(req.Body)
-	bodyStr := string(decodedBody)
+	bodyStr := TruncateBody(string(decodedBody), 10000)
 	if bodyStr == "" {
 		bodyStr = "[Empty Body]"
 	}
@@ -52,14 +52,31 @@ func (o *OllamaBackend) Analyze(req burp.BurpRequest) (*AIPlan, error) {
 	headersJSON, _ := json.MarshalIndent(req.Headers, "", "  ")
 	userKnowledge := LoadKnowledge()
 
-	prompt := fmt.Sprintf(`Analyze the following HTTP request for security vulnerabilities.
+	var responseContext string
+	if req.ResponseStatus > 0 {
+		resHeadersJSON, _ := json.MarshalIndent(req.ResponseHeaders, "", "  ")
+		decodedResBody, _ := base64.StdEncoding.DecodeString(req.ResponseBody)
+		resBodyStr := TruncateBody(string(decodedResBody), 10000)
+		if resBodyStr == "" {
+			resBodyStr = "[Empty Response Body]"
+		}
+		responseContext = fmt.Sprintf("\n### RESPONSE DATA\nStatus: %d\nHeaders:\n%s\nBody: %s\n", req.ResponseStatus, string(resHeadersJSON), resBodyStr)
+	}
+
+	var userInstructions string
+	if req.UserContext != "" {
+		userInstructions = fmt.Sprintf("\n### SPECIAL USER INSTRUCTIONS (PRIORITY):\n%s\n", req.UserContext)
+	}
+
+	prompt := fmt.Sprintf(`Analyze the following HTTP request (and response if provided) for security vulnerabilities.
+%s
 Method: %s
 URL: %s
 Tool Source: %s
 Headers: 
 %s
 Body: %s
-
+%s
 ### User Training & Expertise:
 %s
 ### Instructions:
@@ -79,7 +96,7 @@ Body: %s
      "actions": [{"tool": "toolname", "target": "url", "params": {"key": "val"}}],
      "rewrite_rules": ["modified_body_base64"]
    }
-   Only output the JSON object. No preamble.`, req.Method, req.URL, req.Tool, string(headersJSON), bodyStr, userKnowledge)
+   Only output the JSON object. No preamble.`, userInstructions, req.Method, req.URL, req.Tool, string(headersJSON), bodyStr, responseContext, userKnowledge)
 
 	ollamaReq := ollamaRequest{
 		Model:  o.Model,

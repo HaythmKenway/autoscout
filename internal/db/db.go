@@ -41,10 +41,11 @@ func Deamon() {
 		return
 	}
 
+	rateLimit := localUtils.GetRateLimit()
 	for _, url := range urls {
 		// SubdomainEnum now manages its own connection or receives one depending on implementation
 		// For the standalone deamon, we let it function as is, or update it to take db
-		if err := SubdomainEnum(url); err != nil {
+		if err := SubdomainEnum(url, rateLimit); err != nil {
 			localUtils.CheckError(err)
 		}
 	}

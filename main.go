@@ -69,8 +69,10 @@ func main() {
 		}
 	}
 
+	rateLimit := localUtils.GetRateLimit()
+
 	if *spi != "" {
-		controller.Spider(*spi)
+		controller.Spider(*spi, rateLimit)
 	}
 
 	if *htt != "" {
@@ -78,7 +80,7 @@ func main() {
 		if err != nil {
 			localUtils.Logger(fmt.Sprintf("Could not open DB for Httpx: %v", err), 2)
 		} else {
-			httpx.Httpx(dbConn, *htt)
+			httpx.Httpx(dbConn, *htt, rateLimit)
 			dbConn.Close()
 		}
 	}

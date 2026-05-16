@@ -17,6 +17,7 @@ import (
 	"github.com/HaythmKenway/autoscout/internal/db"
 	scheduler "github.com/HaythmKenway/autoscout/internal/scheduler"
 	"github.com/HaythmKenway/autoscout/pkg/burp"
+	"github.com/HaythmKenway/autoscout/pkg/localUtils"
 	"github.com/HaythmKenway/autoscout/pkg/tools"
 )
 
@@ -119,9 +120,12 @@ func (m dashboardModel) Update(msg tea.Msg) (dashboardModel, tea.Cmd) {
 				m.selectedJob++
 			}
 		case "x": // Kill selected job
-			if len(m.activeJobs) > 0 {
+			if len(m.activeJobs) > 0 && m.selectedJob < len(m.activeJobs) {
 				job := m.activeJobs[m.selectedJob]
+				localUtils.Logger(fmt.Sprintf("[Dashboard] User requested kill for job %s (%s)", job.ID, job.Tool), 1)
 				tools.DefaultJobManager.StopJob(job.ID)
+			} else {
+				localUtils.Logger("[Dashboard] No job selected or job list empty", 2)
 			}
 		}
 
@@ -282,6 +286,10 @@ func (m dashboardModel) View(zm *zone.Manager) string {
 			}
 			elapsed := time.Since(job.StartTime).Round(time.Second)
 			row := fmt.Sprintf("%s%-8s | %s (%s)", cursor, job.Tool, job.ID, elapsed)
+			if job.IsKilling {
+				style = style.Foreground(lipgloss.Color("1")).Bold(true)
+				row = fmt.Sprintf("%s%-8s | %s [KILLING...]", cursor, job.Tool, job.ID)
+			}
 			// Truncate to fit jobsWidth
 			maxLen := jobsWidth
 			if lipgloss.Width(row) > maxLen {

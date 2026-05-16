@@ -76,3 +76,11 @@ func LoadBackend() AIAgent {
 	// Default to Codex if nothing else matches or is specified
 	return NewCodexBackend("")
 }
+
+// TruncateBody limits the size of a string to avoid exceeding LLM context windows.
+func TruncateBody(body string, maxLen int) string {
+	if len(body) <= maxLen {
+		return body
+	}
+	return body[:maxLen] + "\n\n[... TRUNCATED DUE TO SIZE ...]"
+}

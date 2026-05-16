@@ -130,6 +130,24 @@ func GetProxyURL() string {
 	return config.Settings.ProxyURL
 }
 
+func GetRateLimit() string {
+	settingsPath := os.ExpandEnv("$HOME/.config/autoscout/user-config.yaml")
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		return "5"
+	}
+	var config struct {
+		Settings struct {
+			RateLimit string `yaml:"rate_limit"`
+		} `yaml:"settings"`
+	}
+	yaml.Unmarshal(data, &config)
+	if config.Settings.RateLimit == "" {
+		return "5"
+	}
+	return config.Settings.RateLimit
+}
+
 func RemoveDuplicates(arr []string) []string {
 	uniqueMap := make(map[string]struct{})
 	for _, elem := range arr {

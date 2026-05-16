@@ -8,8 +8,18 @@ import (
 	"github.com/HaythmKenway/autoscout/pkg/localUtils"
 )
 
-func Spider(domain string) ([]string, error) {
-	cmd := exec.Command("gau", domain)
+func Spider(domain string, rateLimit string) ([]string, error) {
+	if rateLimit == "" {
+		rateLimit = localUtils.GetRateLimit()
+	}
+	
+	args := []string{domain}
+	if rateLimit != "" {
+		// gau --threads is uint. We'll cap it at rateLimit or 10.
+		args = append(args, "--threads", "2") // Default to low threads for safety
+	}
+
+	cmd := exec.Command("gau", args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, err

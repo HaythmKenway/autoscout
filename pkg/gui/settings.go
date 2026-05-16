@@ -18,6 +18,7 @@ type settingsCategory int
 const (
 	CatUI settingsCategory = iota
 	CatAI
+	CatWordlists
 	CatDiscord
 )
 
@@ -32,6 +33,10 @@ type settingsModel struct {
 	// AI Settings
 	agentOptions []string
 	agentCursor  int
+	
+	// Wordlist Settings
+	wordlistCursor int
+	wordlistInputs []textinput.Model
 	
 	// Discord Settings
 	discordInputs []textinput.Model
@@ -62,6 +67,8 @@ func NewSettingsModel(width int, height int) settingsModel {
 	if userSettings.Theme == "" { userSettings.Theme = "Modern" }
 	if userSettings.Agent == "" { userSettings.Agent = "Codex" }
 	if userSettings.ProxyURL == "" { userSettings.ProxyURL = "http://127.0.0.1:8080" }
+	if userSettings.FuzzWordlist == "" { userSettings.FuzzWordlist = "/usr/share/wordlists/dirb/common.txt" }
+	if userSettings.ParamWordlist == "" { userSettings.ParamWordlist = "/usr/share/wordlists/seclists/Discovery/Web-Content/burp-parameter-names.txt" }
 
 	// UI Options
 	themes := []string{"Modern", "Cyberpunk", "Matrix"}
@@ -83,6 +90,19 @@ func NewSettingsModel(width int, height int) settingsModel {
 		}
 	}
 
+	// Wordlist Inputs
+	fi := textinput.New()
+	fi.Placeholder = "/usr/share/wordlists/..."
+	fi.SetValue(userSettings.FuzzWordlist)
+	fi.CharLimit = 256
+	fi.Width = 50
+
+	pi2 := textinput.New()
+	pi2.Placeholder = "/usr/share/wordlists/..."
+	pi2.SetValue(userSettings.ParamWordlist)
+	pi2.CharLimit = 256
+	pi2.Width = 50
+
 	// Discord Inputs
 	di := textinput.New()
 	di.Placeholder = "Webhook URL"
@@ -97,13 +117,22 @@ func NewSettingsModel(width int, height int) settingsModel {
 	pi.CharLimit = 128
 	pi.Width = 30
 
+	// Rate Limit Input
+	ri := textinput.New()
+	ri.Placeholder = "5"
+	if userSettings.RateLimit == "" { userSettings.RateLimit = "5" }
+	ri.SetValue(userSettings.RateLimit)
+	ri.CharLimit = 10
+	ri.Width = 10
+
 	return settingsModel{
 		activeCat:     CatUI,
 		themeOptions:  themes,
 		themeCursor:   tCursor,
 		agentOptions:  agents,
 		agentCursor:   aCursor,
-		discordInputs: []textinput.Model{di, pi},
+		wordlistInputs: []textinput.Model{fi, pi2},
+		discordInputs: []textinput.Model{di, pi, ri},
 		width:         width,
 		height:        height,
 		discordModel:  discordModel,
@@ -149,6 +178,8 @@ func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 				m.focusEditor = true
 				if m.activeCat == CatDiscord {
 					m.discordInputs[0].Focus()
+				} else if m.activeCat == CatWordlists {
+					m.wordlistInputs[m.wordlistCursor].Focus()
 				}
 			}
 		} else {
@@ -172,13 +203,32 @@ func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 				case "left", "h", "esc":
 					m.focusEditor = false
 				}
-			case CatDiscord:
-				if msg.String() == "esc" {
+			case CatWordlists:
+				switch msg.String() {
+				case "tab":
+					m.wordlistInputs[m.wordlistCursor].Blur()
+					m.wordlistCursor = (m.wordlistCursor + 1) % len(m.wordlistInputs)
+					m.wordlistInputs[m.wordlistCursor].Focus()
+				case "esc":
 					m.focusEditor = false
-					m.discordInputs[0].Blur()
+					m.wordlistInputs[m.wordlistCursor].Blur()
+				default:
+					m.wordlistInputs[m.wordlistCursor], cmd = m.wordlistInputs[m.wordlistCursor].Update(msg)
+					cmds = append(cmds, cmd)
 				}
-				m.discordInputs[0], cmd = m.discordInputs[0].Update(msg)
-				cmds = append(cmds, cmd)
+			case CatDiscord:
+				switch msg.String() {
+				case "tab":
+					m.discordInputs[m.wordlistCursor].Blur()
+					m.wordlistCursor = (m.wordlistCursor + 1) % len(m.discordInputs)
+					m.discordInputs[m.wordlistCursor].Focus()
+				case "esc":
+					m.focusEditor = false
+					m.discordInputs[m.wordlistCursor].Blur()
+				default:
+					m.discordInputs[m.wordlistCursor], cmd = m.discordInputs[m.wordlistCursor].Update(msg)
+					cmds = append(cmds, cmd)
+				}
 			}
 		}
 
@@ -201,6 +251,9 @@ func (m *settingsModel) save() {
 	m.userSettings.Theme = m.themeOptions[m.themeCursor]
 	m.userSettings.Agent = m.agentOptions[m.agentCursor]
 	m.userSettings.ProxyURL = m.discordInputs[1].Value()
+	m.userSettings.RateLimit = m.discordInputs[2].Value()
+	m.userSettings.FuzzWordlist = m.wordlistInputs[0].Value()
+	m.userSettings.ParamWordlist = m.wordlistInputs[1].Value()
 	m.discordModel.DiscordWebhookURL = m.discordInputs[0].Value()
 
 	// Persist to Disk
@@ -208,17 +261,19 @@ func (m *settingsModel) save() {
 	updateSettingsConfig("theme", m.userSettings.Theme)
 	updateSettingsConfig("agent", m.userSettings.Agent)
 	updateSettingsConfig("proxy", m.userSettings.ProxyURL)
+	updateSettingsConfig("rate_limit", m.userSettings.RateLimit)
+	updateSettingsConfig("wordlist", m.userSettings.FuzzWordlist)
+	updateSettingsConfig("param_wordlist", m.userSettings.ParamWordlist)
 	localUtils.Logger("Settings persisted to disk", 1)
 }
 
 func (m settingsModel) View() string {
-	catWidth := m.vw(25)
-	if catWidth < 18 { catWidth = 18 }
-	editorWidth := m.width - catWidth - 4
+	catWidth := 22
+	editorWidth := m.width - catWidth - 2
 	if editorWidth < 0 { editorWidth = 0 }
 
 	// Categories List
-	categories := []string{" UI / Appearance ", " AI Fleet Mode ", " Discord / Notify "}
+	categories := []string{" UI / Appearance ", " AI Fleet Mode ", " Wordlists ", " Discord / Notify "}
 	var catViews []string
 	for i, cat := range categories {
 		style := lipgloss.NewStyle().Padding(0, 1).MarginBottom(1)
@@ -280,19 +335,42 @@ func (m settingsModel) View() string {
 			" - InfoLeakScanner",
 			" - DeepScanner",
 		)
-	case CatDiscord:
-		m.discordInputs[0].Width = m.vw(60)
+	case CatWordlists:
+		m.wordlistInputs[0].Width = editorWidth - 4
+		m.wordlistInputs[1].Width = editorWidth - 4
 		editorContent = lipgloss.JoinVertical(lipgloss.Left,
-			titleStyle.Render("DISCORD CONFIGURATION"),
-			"Webhook URL:",
+			titleStyle.Render("WORDLIST CONFIGURATION"),
+			"Fuzzing / Directory Wordlist:",
+			m.wordlistInputs[0].View(),
+			"",
+			"Parameter Discovery Wordlist:",
+			m.wordlistInputs[1].View(),
+			"",
+			lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(" [Tab] Cycle Inputs"),
+		)
+	case CatDiscord:
+		m.discordInputs[0].Width = editorWidth - 4
+		m.discordInputs[1].Width = editorWidth - 4
+		m.discordInputs[2].Width = editorWidth - 4
+		editorContent = lipgloss.JoinVertical(lipgloss.Left,
+			titleStyle.Render("SYSTEM CONFIGURATION"),
+			"Discord Webhook URL:",
 			m.discordInputs[0].View(),
+			"",
+			"Global Proxy URL:",
+			m.discordInputs[1].View(),
+			"",
+			"Global Rate Limit (req/s):",
+			m.discordInputs[2].View(),
+			"",
+			lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(" [Tab] Cycle Inputs"),
 		)
 	}
 
 	editorStyle := lipgloss.NewStyle().
 		Width(editorWidth).
-		Height(m.vh(80)).
-		Padding(1).
+		Height(m.height - 4).
+		Padding(0, 1).
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(lipgloss.Color("237"))
 
@@ -305,25 +383,25 @@ func (m settingsModel) View() string {
 	// Save Banner
 	footer := ""
 	if m.saveMessage != "" {
-		footer = "\n" + lipgloss.NewStyle().
+		footer = lipgloss.NewStyle().
 			Background(lipgloss.Color("2")).
 			Foreground(lipgloss.Color("0")).
 			Bold(true).
 			Padding(0, 2).
 			Render(m.saveMessage)
 	} else {
-		footer = "\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(" [Tab] Switch Zone  [Ctrl+S] Save  [Esc] Back")
+		footer = lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(" [Tab] Switch Zone  [Ctrl+S] Save  [Esc] Back")
 	}
 
 	main := lipgloss.JoinHorizontal(lipgloss.Top, catList, editor)
-	return main + footer
+	return lipgloss.JoinVertical(lipgloss.Left, main, footer)
 }
 
 func storetodb(discord *Discord, key string, value string) {
 	switch key {
 	case "Did", "Dchannel", "Dame", "Dformat", "Dwebhook":
 		updateDiscordConfig(discord, key, value)
-	case "agent", "data", "theme":
+	case "agent", "data", "theme", "wordlist", "param_wordlist":
 		updateSettingsConfig(key, value)
 	}
 }
@@ -367,6 +445,12 @@ func updateSettingsConfig(key string, value string) {
 		config.Settings.Theme = value
 	case "proxy":
 		config.Settings.ProxyURL = value
+	case "rate_limit":
+		config.Settings.RateLimit = value
+	case "wordlist":
+		config.Settings.FuzzWordlist = value
+	case "param_wordlist":
+		config.Settings.ParamWordlist = value
 	}
 
 	writeSettingsConfig(filePath, config)
@@ -413,6 +497,9 @@ type Settings struct {
 	Data          string `yaml:"data"`
 	Theme         string `yaml:"theme"`
 	ProxyURL      string `yaml:"proxy_url"`
+	FuzzWordlist  string `yaml:"wordlist_path"`
+	ParamWordlist string `yaml:"param_wordlist_path"`
+	RateLimit     string `yaml:"rate_limit"`
 }
 
 type DiscordConfig struct {

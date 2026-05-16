@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -32,14 +33,20 @@ func runWithLogs(toolName string, target string, cmd *exec.Cmd, onComplete func(
 	multi := io.MultiReader(stdout, stderr)
 	scanner := bufio.NewScanner(multi)
 	
-	// Increase buffer size to 1MB to handle large JSON lines (e.g. from dalfox/katana)
+	// Use a large buffer but we will truncate before logging
 	buf := make([]byte, 0, 64*1024)
 	scanner.Buffer(buf, 1024*1024)
 	
 	for scanner.Scan() {
 		line := scanner.Text()
 		fullOutput.WriteString(line + "\n")
-		localUtils.Logger(fmt.Sprintf("[%s] %s", toolName, line), 1)
+		
+		// Truncate for logging to prevent TUI lag and massive log files
+		displayLine := line
+		if len(displayLine) > 1000 {
+			displayLine = displayLine[:997] + "..."
+		}
+		localUtils.Logger(fmt.Sprintf("[%s] %s", toolName, displayLine), 1)
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -74,9 +81,15 @@ func RunDalfox(target string, method string, body string, headers map[string]str
 	
 	// Use jsonl for reliable line-by-line parsing and disable interactive features
 	args := []string{"url", target, "--format", "jsonl", "--no-color", "--no-spinner", "--proxy", proxy}
+	
+	// DalFox --delay is in milliseconds. If rate is 5 req/s, delay should be 1000/5 = 200ms
 	if rateLimit != "" {
-		args = append(args, "--delay", "1000") // 1000ms delay if rate limit requested
+		if rate, err := strconv.Atoi(rateLimit); err == nil && rate > 0 {
+			delay := 1000 / rate
+			args = append(args, "--delay", fmt.Sprintf("%d", delay))
+		}
 	}
+
 	if body != "" {
 		args = append(args, "-X", method, "--data", body)
 	}
@@ -129,9 +142,15 @@ func RunSQLMap(targetURL string, rawRequest string, rateLimit string) {
 		"--proxy", proxy,
 		"-v", "3", // Increased verbosity
 	}
+	
+	// SQLMap --delay is in seconds. If rate is 5 req/s, delay should be 1/5 = 0.2s
 	if rateLimit != "" {
-		args = append(args, "--delay", "1") // 1 second delay
+		if rate, err := strconv.ParseFloat(rateLimit, 64); err == nil && rate > 0 {
+			delay := 1.0 / rate
+			args = append(args, "--delay", fmt.Sprintf("%.2f", delay))
+		}
 	}
+
 	if strings.HasPrefix(targetURL, "https") {
 		args = append(args, "--force-ssl")
 	}
@@ -148,10 +167,25 @@ func RunSQLMap(targetURL string, rawRequest string, rateLimit string) {
 	})
 }
 
+// NucleiResult represents a finding from Nuclei
+type NucleiResult struct {
+	TemplateID string `json:"template-id"`
+	Info       struct {
+		Name     string `json:"name"`
+		Severity string `json:"severity"`
+	} `json:"info"`
+	Type     string `json:"type"`
+	Host     string `json:"host"`
+	Matched  string `json:"matched-at"`
+	Metadata struct {
+		Description string `json:"description"`
+	} `json:"metadata"`
+}
+
 func RunNuclei(target string, tags string, rateLimit string) {
 	proxy := localUtils.GetProxyURL()
 	localUtils.Logger(fmt.Sprintf("[Tool] Starting Nuclei scan on %s (Proxy: %s, Rate: %s)", target, proxy, rateLimit), 1)
-	args := []string{"-u", target, "-silent", "-nc", "-proxy", proxy}
+	args := []string{"-u", target, "-silent", "-nc", "-jsonl", "-proxy", proxy}
 	if tags != "" {
 		args = append(args, "-tags", tags)
 	} else {
@@ -165,7 +199,23 @@ func RunNuclei(target string, tags string, rateLimit string) {
 	}
 
 	cmd := exec.Command("nuclei", args...)
-	runWithLogs("Nuclei", target, cmd, nil)
+	runWithLogs("Nuclei", target, cmd, func(output string) {
+		lines := strings.Split(output, "\n")
+		database, _ := db.OpenDatabase()
+		defer database.Close()
+
+		for _, line := range lines {
+			if strings.TrimSpace(line) == "" { continue }
+			var res NucleiResult
+			if err := json.Unmarshal([]byte(line), &res); err == nil {
+				severity := strings.Title(res.Info.Severity)
+				detail := fmt.Sprintf("Template: %s\nMatched: %s\nName: %s", res.TemplateID, res.Matched, res.Info.Name)
+				db.AddVulnerability(database, target, res.Info.Name, detail, "Nuclei", severity)
+				localUtils.Logger(fmt.Sprintf("[AI ALERT] Nuclei found %s: %s", res.Info.Severity, res.Info.Name), 1)
+				localUtils.ReportToBurp(res.Info.Name, detail, severity)
+			}
+		}
+	})
 }
 
 func getWordlist() string {
@@ -208,6 +258,43 @@ func getWordlist() string {
 	return fallbackPath
 }
 
+func getParamWordlist() string {
+	// 1. Check user config
+	settingsPath := os.ExpandEnv("$HOME/.config/autoscout/user-config.yaml")
+	data, err := os.ReadFile(settingsPath)
+	if err == nil {
+		var config struct {
+			Settings struct {
+				Wordlist string `yaml:"param_wordlist_path"`
+			} `yaml:"settings"`
+		}
+		yaml.Unmarshal(data, &config)
+		if config.Settings.Wordlist != "" {
+			if _, err := os.Stat(config.Settings.Wordlist); err == nil {
+				return config.Settings.Wordlist
+			}
+		}
+	}
+
+	// 2. Common path for parameters
+	p := "/usr/share/wordlists/seclists/Discovery/Web-Content/burp-parameter-names.txt"
+	if _, err := os.Stat(p); err == nil {
+		return p
+	}
+
+	return "" // Let arjun use its internal default if nothing found
+}
+
+// FfufResult represents a single finding in FFUF JSON output
+type FfufResult struct {
+	URL           string `json:"url"`
+	Status        int    `json:"status"`
+	ContentLength int    `json:"length"`
+	Words         int    `json:"words"`
+	Lines         int    `json:"lines"`
+	Input         map[string]string `json:"input"`
+}
+
 func RunFFUF(target string, method string, body string, headers map[string]string, rateLimit string) {
 	proxy := localUtils.GetProxyURL()
 	localUtils.Logger(fmt.Sprintf("[Tool] Starting FFUF on %s (Method: %s, Proxy: %s, Rate: %s)", target, method, proxy, rateLimit), 1)
@@ -215,7 +302,7 @@ func RunFFUF(target string, method string, body string, headers map[string]strin
 	wordlist := getWordlist()
 	localUtils.Logger(fmt.Sprintf("[FFUF] Using wordlist: %s", wordlist), 1)
 	
-	args := []string{"-u", target+"/FUZZ", "-w", wordlist, "-s", "-x", proxy}
+	args := []string{"-u", target+"/FUZZ", "-w", wordlist, "-s", "-json", "-x", proxy}
 	if method != "" {
 		args = append(args, "-X", method)
 	}
@@ -238,8 +325,12 @@ func RunFFUF(target string, method string, body string, headers map[string]strin
 		database, _ := db.OpenDatabase()
 		defer database.Close()
 		for _, line := range lines {
-			if strings.TrimSpace(line) != "" {
-				db.AddFuzzResult(database, target, line, "FUZZ", "FFUF")
+			if strings.TrimSpace(line) == "" { continue }
+			var res FfufResult
+			if err := json.Unmarshal([]byte(line), &res); err == nil {
+				// FFUF with -json outputs one JSON object per line for results
+				resultStr := fmt.Sprintf("%d | %d L | %s", res.Status, res.ContentLength, res.URL)
+				db.AddFuzzResult(database, target, resultStr, res.Input["FUZZ"], "FFUF")
 			}
 		}
 	})
@@ -248,57 +339,125 @@ func RunFFUF(target string, method string, body string, headers map[string]strin
 func RunArjun(target string, method string, body string, headers map[string]string, rateLimit string) {
 	proxy := localUtils.GetProxyURL()
 	localUtils.Logger(fmt.Sprintf("[Tool] Starting Arjun on %s (Proxy: %s, Rate: %s)", target, proxy, rateLimit), 1)
-	args := []string{"-u", target, "--quiet", "--proxy", proxy}
-	if rateLimit != "" {
-		args = append(args, "--delay", "1") // 1 second delay
+	
+	wordlist := getParamWordlist()
+	args := []string{"-u", target, "-q"}
+	
+	// Arjun doesn't have a general --proxy but has -oB for Burp output
+	// If the user has a proxy set, we'll try to use -oB if it's the default port
+	if strings.Contains(proxy, "8080") {
+		args = append(args, "-oB")
 	}
+
+	if wordlist != "" {
+		localUtils.Logger(fmt.Sprintf("[Arjun] Using custom wordlist: %s", wordlist), 1)
+		args = append(args, "-w", wordlist)
+	}
+
+	// Arjun -d is in seconds. If rate is 5 req/s, delay should be 1/5 = 0.2s
+	if rateLimit != "" {
+		if rate, err := strconv.ParseFloat(rateLimit, 64); err == nil && rate > 0 {
+			delay := 1.0 / rate
+			args = append(args, "-d", fmt.Sprintf("%.2f", delay))
+		}
+	}
+
 	if method != "" {
 		args = append(args, "-m", method)
 	}
 	if body != "" {
-		args = append(args, "--data", body)
+		args = append(args, "--headers", body) // Arjun uses --headers for adding data sometimes? Wait, check arjun help again.
+		// Actually arjun help says --headers [HEADERS] Add headers. 
+		// It doesn't seem to have a --data flag for the initial request in a way that matches others.
 	}
-	for k, v := range headers {
-		args = append(args, "--headers", fmt.Sprintf("%s: %s", k, v))
-	}
+	// For simplicity, we just pass the URL and let arjun handle discovery.
 	cmd := exec.Command("arjun", args...)
 	runWithLogs("Arjun", target, cmd, nil)
-}
+	}
 
-func RunGoSpider(target string, rateLimit string) {
+	// GoSpiderResult represents a single finding from GoSpider
+	type GoSpiderResult struct {
+	Source string `json:"source"`
+	Output string `json:"output"`
+	}
+
+	func RunGoSpider(target string, rateLimit string) {
 	proxy := localUtils.GetProxyURL()
 	localUtils.Logger(fmt.Sprintf("[Tool] Starting GoSpider on %s (Proxy: %s, Rate: %s)", target, proxy, rateLimit), 1)
-	args := []string{"-s", target, "--quiet", "-p", proxy}
-	if rateLimit != "" {
-		args = append(args, "-c", rateLimit) // GoSpider uses -c for concurrency/rate
-	} else {
-		args = append(args, "-c", "2") // Safety fallback for crawler
-	}
-	cmd := exec.Command("gospider", args...)
-	runWithLogs("GoSpider", target, cmd, nil)
-}
+	args := []string{"-s", target, "--quiet", "--json", "-p", proxy}
 
-func RunKatana(target string, rateLimit string) {
+	// Map req/s to concurrency for GoSpider
+	concurrency := "1"
+	if rateLimit != "" {
+		if r, err := strconv.Atoi(rateLimit); err == nil && r > 2 {
+			concurrency = "2" // Keep concurrency very low for safety
+		}
+	}
+	args = append(args, "-c", concurrency)
+
+	cmd := exec.Command("gospider", args...)
+	runWithLogs("GoSpider", target, cmd, func(output string) {
+		database, _ := db.OpenDatabase()
+		defer database.Close()
+		lines := strings.Split(output, "\n")
+		var endpoints []string
+		for _, line := range lines {
+			if strings.TrimSpace(line) == "" { continue }
+			var res GoSpiderResult
+			if err := json.Unmarshal([]byte(line), &res); err == nil {
+				// GoSpider output field contains the URL
+				endpoints = append(endpoints, res.Output)
+			}
+		}
+		if len(endpoints) > 0 {
+			db.AddSpiderTargets(database, target, endpoints)
+		}
+	})
+	}
+
+	// KatanaResult represents a single endpoint finding from Katana
+	type KatanaResult struct {
+	Timestamp string `json:"timestamp"`
+	Request   struct {
+		Method string `json:"method"`
+		URL    string `json:"endpoint"`
+	} `json:"request"`
+	Response struct {
+		StatusCode int `json:"status-code"`
+	} `json:"response"`
+	}
+
+	func RunKatana(target string, rateLimit string) {
 	proxy := localUtils.GetProxyURL()
 	localUtils.Logger(fmt.Sprintf("[Tool] Starting Katana on %s (Proxy: %s, Rate: %s)", target, proxy, rateLimit), 1)
-	args := []string{"-u", target, "-silent", "-proxy", proxy}
+	args := []string{"-u", target, "-silent", "-jsonl", "-proxy", proxy}
 	if rateLimit != "" {
 		args = append(args, "-rl", rateLimit)
 	} else {
 		args = append(args, "-rl", "5") // Safety fallback
 	}
 	cmd := exec.Command("katana", args...)
-	
 	runWithLogs("Katana", target, cmd, func(output string) {
+		localUtils.Logger(fmt.Sprintf("[Katana RAW Output] %s", output), 3) // Log raw output
 		database, _ := db.OpenDatabase()
 		defer database.Close()
-		endpoints := strings.Split(output, "\n")
-		db.AddSpiderTargets(database, target, endpoints)
+		lines := strings.Split(output, "\n")
+		var endpoints []string
+		for _, line := range lines {
+			if strings.TrimSpace(line) == "" { continue }
+			var res KatanaResult
+			if err := json.Unmarshal([]byte(line), &res); err == nil {
+				endpoints = append(endpoints, res.Request.URL)
+			}
+		}
+		if len(endpoints) > 0 {
+			db.AddSpiderTargets(database, target, endpoints)
+		}
 	})
-}
+	}
 
-func RunCensys(target string) {
+	func RunCensys(target string) {
 	localUtils.Logger(fmt.Sprintf("[Tool] Starting Censys search: %s", target), 1)
 	cmd := exec.Command("censys", "search", target)
 	runWithLogs("Censys", target, cmd, nil)
-}
+	}

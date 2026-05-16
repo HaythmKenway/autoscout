@@ -72,11 +72,10 @@ func createSubsTableIfNotExists(db *sql.DB) error {
     `)
 	return err
 }
-
 func createUrlsTableIfNotExist(db *sql.DB) error {
 	_, err := db.Exec(`
         CREATE TABLE IF NOT EXISTS urls (
-			subdomain TEXT NOT NULL,
+            subdomain TEXT NOT NULL,
             url TEXT PRIMARY KEY,
             host TEXT NOT NULL,
             title TEXT,
@@ -87,14 +86,14 @@ func createUrlsTableIfNotExist(db *sql.DB) error {
             ip TEXT,
             port TEXT,
             status_code TEXT,
+            session_id TEXT,
             lastModified DATE DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(host) REFERENCES targets(subdomain) ON DELETE CASCADE,
-			FOREIGN KEY(subdomain) REFERENCES subdomain(subdomain) ON DELETE CASCADE
+            FOREIGN KEY(subdomain) REFERENCES subdomain(subdomain) ON DELETE CASCADE
         )
     `)
 	return err
 }
-
 func createSpiderTableIfNotExist(db *sql.DB) error {
 	_, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS spider (

@@ -86,7 +86,7 @@ public class AutoscoutHttpHandler implements HttpHandler {
         return ResponseReceivedAction.continueWith(httpResponseReceived);
     }
 
-    public void sendManual(HttpRequestResponse message) {
+    public void sendManual(HttpRequestResponse message, boolean includeResponse) {
         if (apiEndpointInvalid()) {
             ui.log("[DEBUG] Manual send skipped: API endpoint invalid.");
             return;
@@ -112,11 +112,12 @@ public class AutoscoutHttpHandler implements HttpHandler {
             }
             payload.add("headers", headers);
 
-            payload.addProperty("request_body", Base64.getEncoder().encodeToString(message.request().body().getBytes()));
+            // Explicitly separate and encode Request and Response
+            payload.addProperty("raw_request", Base64.getEncoder().encodeToString(message.request().toByteArray().getBytes()));
             
-            if (message.hasResponse()) {
+            if (includeResponse && message.hasResponse()) {
                 payload.addProperty("status", message.response().statusCode());
-                payload.addProperty("response_body", Base64.getEncoder().encodeToString(message.response().body().getBytes()));
+                payload.addProperty("raw_response", Base64.getEncoder().encodeToString(message.response().toByteArray().getBytes()));
             }
 
             try (OutputStream os = conn.getOutputStream()) {
@@ -126,7 +127,7 @@ public class AutoscoutHttpHandler implements HttpHandler {
 
             int code = conn.getResponseCode();
             if (code == 200) {
-                ui.log("<- Autoscout acknowledged manual analysis.");
+                ui.log("<- Autoscout acknowledged manual analysis (" + (includeResponse ? "Req & Resp" : "Req only") + ").");
             } else {
                 ui.log("!! Manual send failed. Server returned: " + code);
             }

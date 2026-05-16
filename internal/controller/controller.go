@@ -13,9 +13,9 @@ func Init() {
 	db.CheckTables()
 }
 
-func Spider(domain string) {
+func Spider(domain string, rateLimit string) {
 	// 1. Run the Spider Tool (Network operation)
-	targets, err := spider.Spider(domain)
+	targets, err := spider.Spider(domain, rateLimit)
 	if err != nil {
 		localUtils.Logger(fmt.Sprintf("Spider execution failed for %s: %v", domain, err), 2)
 		return

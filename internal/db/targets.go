@@ -36,6 +36,32 @@ func AddTarget(input string) (string, error) {
 	return "Target added successfully", nil
 }
 
+type Target struct {
+	Domain     string
+	Subdomains []string
+}
+
+// GetTargetsWithSubs returns all targets and their associated subdomains
+func GetTargetsWithSubs(db *sql.DB) ([]Target, error) {
+	targets, err := GetTargetsFromTable(db)
+	if err != nil {
+		return nil, err
+	}
+
+	var results []Target
+	for _, domain := range targets {
+		subs, err := GetSubsFromTable(db, domain)
+		if err != nil {
+			// Log error but continue with other targets
+			results = append(results, Target{Domain: domain})
+			continue
+		}
+		results = append(results, Target{Domain: domain, Subdomains: subs})
+	}
+
+	return results, nil
+}
+
 // RemoveTarget manages its own connection (CLI tool usage)
 func RemoveTarget(url string) (string, error) {
 	db, err := OpenDatabase()

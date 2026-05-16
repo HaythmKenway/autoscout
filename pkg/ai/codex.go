@@ -2,11 +2,13 @@ package ai
 
 import (
 	"bufio"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/HaythmKenway/autoscout/pkg/burp"
 	"github.com/HaythmKenway/autoscout/pkg/localUtils"
@@ -26,7 +28,7 @@ func (c *CodexBackend) Name() string {
 
 func (c *CodexBackend) Analyze(req burp.BurpRequest) (*AIPlan, error) {
 	decodedBody, _ := base64.StdEncoding.DecodeString(req.Body)
-	bodyStr := string(decodedBody)
+	bodyStr := TruncateBody(string(decodedBody), 10000)
 	if bodyStr == "" {
 		bodyStr = "[Empty Body]"
 	}
@@ -34,41 +36,65 @@ func (c *CodexBackend) Analyze(req burp.BurpRequest) (*AIPlan, error) {
 	// Use full headers for maximum context
 	headersJSON, _ := json.MarshalIndent(req.Headers, "", "  ")
 	userKnowledge := LoadKnowledge()
+	userSkills := LoadSkills()
 
-	prompt := fmt.Sprintf(`You are a world-class penetration tester. Perform a deep security analysis on this HTTP request.
-ALL headers are provided below - do not ignore them as they may contain session tokens, custom security headers, or injection points.
+	var responseContext string
+	if req.ResponseStatus > 0 {
+		resHeadersJSON, _ := json.MarshalIndent(req.ResponseHeaders, "", "  ")
+		decodedResBody, _ := base64.StdEncoding.DecodeString(req.ResponseBody)
+		resBodyStr := TruncateBody(string(decodedResBody), 10000)
+		if resBodyStr == "" {
+			resBodyStr = "[Empty Response Body]"
+		}
+		responseContext = fmt.Sprintf("\n### RESPONSE DATA\nStatus: %d\nHeaders:\n%s\nBody: %s\n", req.ResponseStatus, string(resHeadersJSON), resBodyStr)
+	}
 
-### HTTP REQUEST DATA
+	var userInstructions string
+	if req.UserContext != "" {
+		userInstructions = fmt.Sprintf("\n### SPECIAL USER INSTRUCTIONS (PRIORITY):\n%s\n", req.UserContext)
+	}
+
+	prompt := fmt.Sprintf(`You are a senior security researcher analyzing web traffic.
+Analyze the following HTTP request (and response if provided) for potential security patterns and provide a structured assessment.
+%s
+### TARGET DATA
 Method: %s
 URL: %s
-Source: %s
+Context: %s
 
-[FULL HEADERS]
+[HEADERS]
 %s
 
-[BODY]
+[DATA]
+%s
+%s
+### REFERENCE KNOWLEDGE
 %s
 
-### USER-SPECIFIC KNOWLEDGE
+### AUTOSCOUT SKILLS
+The following Markdown skills are user-authored playbooks. Follow them when they match the target data, and ignore irrelevant skills.
+
 %s
 
-### MANDATORY ANALYSIS GUIDELINES
-1. **Header Analysis**: Deeply inspect every header (Authorization, Cookies, X-Forwarded-For, etc.) for misconfigurations or vulnerabilities like IDOR, session fixation, or header injection.
-2. **Selective Tooling**: Trigger specific tools ONLY if relevant to the request type. 
-   - Use 'sqlmap' if parameters or JSON bodies are present.
-   - Use 'dalfox' for reflected input.
-   - Use 'nuclei' for known vulnerability templates on APIs.
-3. **Safety**: ALWAYS include "rate_limit" in tool params. Default to "5" for high-traffic targets.
+### TASK
+Provide a structured JSON assessment. Do not execute any tools yourself. 
+Be highly selective. ONLY recommend tools if you see strong, clear evidence of a specific vulnerability class. 
+Avoid over-scanning; do not recommend tools for general "recon" if the request looks benign. 
+**Ensure the 'thinking' field is ALWAYS populated with human-readable reasoning**, even if it's to explain why no tools are being triggered.
+If specific tools are recommended for further automated verification, list them in the "actions" field.
 
-### RESPONSE SPECIFICATION
-Output ONLY raw JSON. No markdown, no preamble.
+OUTPUT FORMAT (RAW JSON ONLY):
 {
-  "thinking": "Concise security reasoning.",
-  "vulnerabilities_suspected": ["List suspected flaws"],
-  "actions": [{"tool": "name", "target": "url", "params": {"key": "val"}}],
-  "rewrite_rules": ["Optional: base64 encoded modified body"]
+  "thinking": "Deep, critical reasoning for why specific tools are (or are NOT) necessary. THIS FIELD MUST NOT BE EMPTY.",
+  "vulnerabilities_suspected": ["Specific Pattern Name"],
+  "actions": [{"tool": "nuclei|sqlmap|dalfox|ffuf", "target": "url", "params": {"rate_limit": "5"}}],
+  "rewrite_rules": ["<base64_modified_payload>"]
 }
-`, req.Method, req.URL, req.Tool, string(headersJSON), bodyStr, userKnowledge)
+`, userInstructions, req.Method, req.URL, req.Tool, string(headersJSON), bodyStr, responseContext, userKnowledge, userSkills)
+
+	// Use context with timeout for codex command
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
 
 	// Use codex exec --json --ephemeral
 	// Added --ignore-user-config and --ignore-rules to ensure environment consistency
@@ -87,10 +113,12 @@ Output ONLY raw JSON. No markdown, no preamble.
 		args = append(args, "--model", c.Model)
 	}
 
-	cmd := exec.Command("codex", args...)
-	cmd.Stdin = strings.NewReader(prompt)
-	localUtils.Logger(fmt.Sprintf("[DEBUG] Codex Prompt length: %d (Piped to Stdin with -)", len(prompt)), 3)
-	
+	cmd := exec.CommandContext(ctx, "codex", args...)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, err
+	}
+
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err
@@ -101,40 +129,62 @@ Output ONLY raw JSON. No markdown, no preamble.
 		return nil, fmt.Errorf("failed to start codex: %v", err)
 	}
 
+	// Write prompt and close stdin to signal EOF
+	go func() {
+		defer stdin.Close()
+		localUtils.Logger(fmt.Sprintf("[Codex DEBUG] Sending prompt (Log truncated to 500 chars): %s...", prompt[:min(len(prompt), 500)]), 3)
+		fmt.Fprint(stdin, prompt)
+	}()
+
 	var rawJSON string
+	var codexError string
 	scanner := bufio.NewScanner(stdout)
+	// Use a larger buffer (1MB) for Codex output
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 1024*1024)
+
 	for scanner.Scan() {
 		line := scanner.Text()
+		localUtils.Logger(fmt.Sprintf("[Codex DEBUG] Incoming Stream: %s", line), 3)
 		var event struct {
 			Type string `json:"type"`
 			Item struct {
 				Text string `json:"text"`
 			} `json:"item"`
+			Error struct {
+				Message string `json:"message"`
+			} `json:"error"`
 		}
 		if err := json.Unmarshal([]byte(line), &event); err == nil {
 			if event.Type == "item.completed" && event.Item.Text != "" {
 				rawJSON = event.Item.Text
-				// Continue scanning to drain pipe, but we have our result
+			} else if event.Type == "error" {
+				codexError = event.Error.Message
 			}
 		}
 	}
 
+	var stderrBuf strings.Builder
 	errScanner := bufio.NewScanner(stderr)
-	var errLines []string
 	for errScanner.Scan() {
 		line := errScanner.Text()
-		// Filter out the "Reading prompt from stdin..." or similar informational messages
-		if !strings.Contains(line, "Reading") && !strings.Contains(line, "prompt") {
-			errLines = append(errLines, line)
-		}
+		stderrBuf.WriteString(line + "\n")
 	}
 
 	cmdErr := cmd.Wait()
-	if cmdErr != nil {
-		errMsg := strings.Join(errLines, " | ")
-		// If we have rawJSON, it might have actually succeeded despite a non-zero exit (e.g. sandbox warning)
+	if ctx.Err() == context.DeadlineExceeded {
+		localUtils.Logger("[Codex ERROR] Command timed out after 60s", 2)
+		return nil, fmt.Errorf("codex timed out")
+	}
+
+	if cmdErr != nil || codexError != "" {
+		errMsg := stderrBuf.String()
+		if codexError != "" {
+			errMsg = fmt.Sprintf("Codex Event Error: %s | Raw Stderr: %s", codexError, errMsg)
+		}
+		// If we have rawJSON, it might have actually succeeded despite a non-zero exit
 		if rawJSON == "" {
-			localUtils.Logger(fmt.Sprintf("[DEBUG] Codex Error Output: %s", errMsg), 3)
+			localUtils.Logger(fmt.Sprintf("[DEBUG] Codex Failed (%v). Stderr: %s", cmdErr, errMsg), 3)
 			return nil, fmt.Errorf("codex execution failed (%v): %s", cmdErr, errMsg)
 		}
 		localUtils.Logger(fmt.Sprintf("[DEBUG] Codex exited with error but returned JSON: %v", cmdErr), 3)
@@ -156,5 +206,6 @@ Output ONLY raw JSON. No markdown, no preamble.
 		return nil, fmt.Errorf("failed to parse AI plan: %v", err)
 	}
 
+	localUtils.Logger(fmt.Sprintf("[Codex Agent] Analysis complete for %s", req.URL), 1)
 	return &plan, nil
 }

@@ -31,31 +31,37 @@ public class AutoscoutContextMenu implements ContextMenuItemsProvider {
         
         List<Component> menuItems = new ArrayList<>();
 
-        JMenuItem sendToAutoscout = new JMenuItem("Send to Autoscout");
-        sendToAutoscout.addActionListener(e -> {
-            List<HttpRequestResponse> toSend = new ArrayList<>();
-            
-            if (event.selectedRequestResponses() != null && !event.selectedRequestResponses().isEmpty()) {
-                toSend.addAll(event.selectedRequestResponses());
-            } else if (event.messageEditorRequestResponse().isPresent()) {
-                toSend.add(event.messageEditorRequestResponse().get().requestResponse());
-            }
+        JMenuItem sendReq = new JMenuItem("Send to Autoscout (Req)");
+        sendReq.addActionListener(e -> sendManualToAutoscout(event, false));
 
-            if (toSend.isEmpty()) {
-                ui.log("[DEBUG] No messages found to send in current context.");
-                return;
-            }
+        JMenuItem sendReqResp = new JMenuItem("Send to Autoscout (Req & Resp)");
+        sendReqResp.addActionListener(e -> sendManualToAutoscout(event, true));
 
-            ui.log("[DEBUG] Clicked 'Send to Autoscout' for " + toSend.size() + " items.");
-            new Thread(() -> {
-                for (HttpRequestResponse message : toSend) {
-                    ui.log("[MANUAL] Sending selected request to Autoscout: " + message.request().url());
-                    handler.sendManual(message);
-                }
-            }).start();
-        });
-
-        menuItems.add(sendToAutoscout);
+        menuItems.add(sendReq);
+        menuItems.add(sendReqResp);
         return menuItems;
+    }
+
+    private void sendManualToAutoscout(ContextMenuEvent event, boolean includeResponse) {
+        List<HttpRequestResponse> toSend = new ArrayList<>();
+        
+        if (event.selectedRequestResponses() != null && !event.selectedRequestResponses().isEmpty()) {
+            toSend.addAll(event.selectedRequestResponses());
+        } else if (event.messageEditorRequestResponse().isPresent()) {
+            toSend.add(event.messageEditorRequestResponse().get().requestResponse());
+        }
+
+        if (toSend.isEmpty()) {
+            ui.log("[DEBUG] No messages found to send in current context.");
+            return;
+        }
+
+        ui.log("[DEBUG] Clicked 'Send to Autoscout (" + (includeResponse ? "Req & Resp" : "Req") + ")' for " + toSend.size() + " items.");
+        new Thread(() -> {
+            for (HttpRequestResponse message : toSend) {
+                ui.log("[MANUAL] Sending to Autoscout: " + message.request().url());
+                handler.sendManual(message, includeResponse);
+            }
+        }).start();
     }
 }

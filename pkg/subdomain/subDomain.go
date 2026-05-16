@@ -3,6 +3,7 @@ package subdomain
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -25,9 +26,13 @@ func (l *logAdapter) Write(data []byte, level levels.Level) {
 	l.w.Write(data)
 }
 
-func Subdomain(domain string) ([]string, error) {
+func Subdomain(domain string, rateLimit string) ([]string, error) {
 	// Standardize path using your utility so it matches the rest of the app
 	logPath := localUtils.GetWorkingDirectory() + "/go.log"
+
+	if rateLimit == "" {
+		rateLimit = localUtils.GetRateLimit()
+	}
 
 	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err == nil {
@@ -41,10 +46,16 @@ func Subdomain(domain string) ([]string, error) {
 		gologger.DefaultLogger.SetWriter(adapter)
 	}
 
-	localUtils.Logger("performing subdomain Enumeration for "+domain, 1)
+	localUtils.Logger(fmt.Sprintf("performing subdomain Enumeration for %s (Rate: %s)", domain, rateLimit), 1)
+
+	threads := 10
+	if rateLimit != "" {
+		// Map rateLimit to threads (roughly)
+		threads = 5 // Keep it conservative
+	}
 
 	subfinderOpts := &runner.Options{
-		Threads:            10,
+		Threads:            threads,
 		Timeout:            30,
 		MaxEnumerationTime: 10,
 		Silent:             true,

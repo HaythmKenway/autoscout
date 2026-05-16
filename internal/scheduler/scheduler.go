@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -276,26 +277,34 @@ func executePath(dbConn *sql.DB, pathID int, initialTarget string) error {
 
 func runTool(dbConn *sql.DB, funcName string, targets []string, args string) ([]string, error) {
 	var results []string
+	rateLimit := localUtils.GetRateLimit()
 
 	for _, target := range targets {
 		switch funcName {
 		case FuncSubfinder:
-			db.SubdomainEnum(target)
+			db.SubdomainEnum(target, rateLimit)
 			subs, _ := db.GetSubsFromTable(dbConn, target)
 			results = append(results, subs...)
 
 		case FuncHTTPX:
-			httpx.Httpx(dbConn, target)
+			httpx.Httpx(dbConn, target, rateLimit)
 			urls, _ := db.GetDataFromTable(dbConn, target)
 			results = append(results, urls...)
 
 		case FuncGoSpider:
-			res, err := spider.Spider(target)
+			res, err := spider.Spider(target, rateLimit)
 			if err == nil {
 				db.AddSpiderTargets(dbConn, target, res)
 				results = append(results, res...)
 			}
 		}
+
+		// Add delay between targets to respect rate limit
+		delay := 200 * time.Millisecond // Default for 5 req/s
+		if rl, err := strconv.Atoi(rateLimit); err == nil && rl > 0 {
+			delay = time.Duration(1000/rl) * time.Millisecond
+		}
+		time.Sleep(delay)
 	}
 	return localUtils.RemoveDuplicates(results), nil
 }

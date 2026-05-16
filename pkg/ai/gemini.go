@@ -39,7 +39,7 @@ func (g *GeminiBackend) Analyze(req burp.BurpRequest) (*AIPlan, error) {
 	}
 
 	decodedBody, _ := base64.StdEncoding.DecodeString(req.Body)
-	bodyStr := string(decodedBody)
+	bodyStr := TruncateBody(string(decodedBody), 10000)
 	if bodyStr == "" {
 		bodyStr = "[Empty Body]"
 	}
@@ -47,21 +47,40 @@ func (g *GeminiBackend) Analyze(req burp.BurpRequest) (*AIPlan, error) {
 	headersJSON, _ := json.MarshalIndent(req.Headers, "", "  ")
 	userKnowledge := LoadKnowledge()
 
+	var responseContext string
+	if req.ResponseStatus > 0 {
+		resHeadersJSON, _ := json.MarshalIndent(req.ResponseHeaders, "", "  ")
+		decodedResBody, _ := base64.StdEncoding.DecodeString(req.ResponseBody)
+		resBodyStr := TruncateBody(string(decodedResBody), 10000)
+		if resBodyStr == "" {
+			resBodyStr = "[Empty Response Body]"
+		}
+		responseContext = fmt.Sprintf("\n### RESPONSE DATA\nStatus: %d\nHeaders:\n%s\nBody: %s\n", req.ResponseStatus, string(resHeadersJSON), resBodyStr)
+	}
+
 	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", g.Model, g.APIKey)
 
-	prompt := fmt.Sprintf(`You are an expert penetration tester. Analyze the following HTTP request for vulnerabilities.
+	var userInstructions string
+	if req.UserContext != "" {
+		userInstructions = fmt.Sprintf("\n### SPECIAL USER INSTRUCTIONS (PRIORITY):\n%s\n", req.UserContext)
+	}
+
+	prompt := fmt.Sprintf(`You are an expert penetration tester. Analyze the following HTTP request (and response if provided) for vulnerabilities.
+%s
 Method: %s
 URL: %s
 Source: %s
 Headers:
 %s
 Body: %s
-
+%s
 ### User Training & Expertise:
 %s
 
 ### Instructions:
 1. **Analyze Request**: Carefully inspect headers and the body for sensitive data or injection points. Check for interesting headers like Authorization, Cookies, or custom headers. Use the provided "User Training" to guide your analysis.
+   - **BE SELECTIVE**: Do not recommend tools for general "recon" if the request looks benign. 
+   - **CRITICAL REASONING**: Only recommend tools if you see strong, clear evidence of a specific vulnerability class. Avoid "just-in-case" scanning.
    - **Selective Fuzzing**: If the request is a simple GET with no parameters, or a POST with a static/irrelevant body, DO NOT trigger parameter fuzzing (ffuf, dalfox with parameters) unless there's a specific reason. Avoid "waste of time" scans on obviously static endpoints.
    - **GraphQL/API**: Prioritize targeted checks for these endpoints rather than generic fuzzing.
 2. **Rules for Tool Selection**:
@@ -75,12 +94,14 @@ Body: %s
 
 4. **Output Format**: Output ONLY a JSON object with this exact structure:
 {
-  "thinking": "Your detailed reasoning here.",
-  "vulnerabilities_suspected": ["type1", "type2"],
+  "thinking": "Deep, critical reasoning for why specific tools are (or are NOT) necessary. THIS FIELD MUST NOT BE EMPTY.",
+  "vulnerabilities_suspected": ["Specific Pattern Name"],
   "actions": [{"tool": "toolname", "target": "string", "params": {"key": "val"}}],
   "rewrite_rules": ["modified_body_base64_string_if_needed"]
 }
-No preamble, no markdown formatting. Just raw JSON.`, req.Method, req.URL, req.Tool, string(headersJSON), bodyStr, userKnowledge)
+No preamble, no markdown formatting. Just raw JSON.`, userInstructions, req.Method, req.URL, req.Tool, string(headersJSON), bodyStr, responseContext, userKnowledge)
+
+	localUtils.Logger(fmt.Sprintf("[Gemini DEBUG] Outgoing Prompt (Truncated 500 chars): %s...", prompt[:500]), 3)
 
 	payload := map[string]interface{}{
 		"contents": []map[string]interface{}{
@@ -100,11 +121,14 @@ No preamble, no markdown formatting. Just raw JSON.`, req.Method, req.URL, req.T
 	
 	resp, err := client.Post(url, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
+		localUtils.Logger(fmt.Sprintf("[Gemini DEBUG] Network Error: %v", err), 2)
 		return nil, err
 	}
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
+	localUtils.Logger(fmt.Sprintf("[Gemini DEBUG] Status: %d, Raw Response: %s", resp.StatusCode, string(body)), 3)
+	
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("gemini api error (%d): %s", resp.StatusCode, string(body))
 	}

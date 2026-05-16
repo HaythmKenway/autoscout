@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/viewport"
@@ -9,62 +10,83 @@ import (
 )
 
 type analysisModel struct {
-	viewport viewport.Model
-	width    int
-	height   int
-	theme    Theme
-	entries  []string
+	viewport   viewport.Model
+	width      int
+	height     int
+	theme      Theme
+	rawEntries []string
+	wrap       bool
 }
 
 func NewAnalysisModel(w, h int) analysisModel {
 	vp := viewport.New(w, h-4)
 	vp.SetContent("Traffic Analysis Feed waiting for Burp data...")
 	return analysisModel{
-		viewport: vp,
-		width:    w,
-		height:   h,
-		theme:    ModernTheme,
-		entries:  []string{},
+		viewport:   vp,
+		width:      w,
+		height:     h,
+		theme:      ModernTheme,
+		rawEntries: []string{},
+		wrap:       false,
 	}
 }
 
 func (m *analysisModel) AddEntry(entry string) {
-	style := lipgloss.NewStyle()
-	if strings.Contains(entry, "ERRO") || strings.Contains(entry, "CRITICAL") {
-		style = style.Foreground(lipgloss.Color("1")).Bold(true)
-	} else if strings.Contains(entry, "ALER") || strings.Contains(entry, "AI ALERT") {
-		style = style.Foreground(lipgloss.Color("3"))
-	} else if strings.Contains(entry, "INFO") {
-		style = style.Foreground(lipgloss.Color("6"))
-	} else if strings.Contains(entry, "[AI Fleet]") {
-		style = style.Foreground(lipgloss.Color("6")).Italic(true)
-	} else if strings.HasPrefix(entry, "AI THINKING:") {
-		style = style.Foreground(lipgloss.Color("244")).Italic(true)
-	} else if strings.HasPrefix(entry, "REQ:") {
-		style = style.Foreground(lipgloss.Color("2"))
+	m.rawEntries = append(m.rawEntries, entry)
+	if len(m.rawEntries) > 500 {
+		m.rawEntries = m.rawEntries[1:]
 	}
+	m.rebuildViewport()
+}
 
-	// Truncate to width - 4 for border/padding
+func (m *analysisModel) rebuildViewport() {
+	var styledEntries []string
 	maxWidth := m.width - 4
 	if maxWidth < 10 {
 		maxWidth = 10
 	}
-	if len(entry) > maxWidth {
-		entry = entry[:maxWidth-3] + "..."
+
+	for _, entry := range m.rawEntries {
+		style := lipgloss.NewStyle()
+		if strings.Contains(entry, "ERRO") || strings.Contains(entry, "CRITICAL") {
+			style = style.Foreground(lipgloss.Color("1")).Bold(true)
+		} else if strings.Contains(entry, "ALER") || strings.Contains(entry, "AI ALERT") {
+			style = style.Foreground(lipgloss.Color("3"))
+		} else if strings.Contains(entry, "INFO") {
+			style = style.Foreground(lipgloss.Color("6"))
+		} else if strings.Contains(entry, "[AI Fleet]") {
+			style = style.Foreground(lipgloss.Color("6")).Italic(true)
+		} else if strings.HasPrefix(entry, "AI THINKING:") {
+			style = style.Foreground(lipgloss.Color("244")).Italic(true)
+		} else if strings.HasPrefix(entry, "REQ:") {
+			style = style.Foreground(lipgloss.Color("2"))
+		}
+
+		var processed string
+		if m.wrap {
+			style = style.Width(maxWidth)
+			processed = style.Render(entry)
+		} else {
+			display := entry
+			if len(display) > maxWidth {
+				display = display[:maxWidth-3] + "..."
+			}
+			processed = style.Render(display)
+		}
+		styledEntries = append(styledEntries, processed)
 	}
 
-	styledEntry := style.Render(entry)
-
-	m.entries = append(m.entries, styledEntry)
-	if len(m.entries) > 500 { // Increased buffer
-		m.entries = m.entries[1:]
-	}
-	m.viewport.SetContent(strings.Join(m.entries, "\n"))
+	m.viewport.SetContent(strings.Join(styledEntries, "\n"))
 	m.viewport.GotoBottom()
 }
 
+func (m *analysisModel) ToggleWrap() {
+	m.wrap = !m.wrap
+	m.rebuildViewport()
+}
+
 func (m *analysisModel) Clear() {
-	m.entries = []string{}
+	m.rawEntries = []string{}
 	m.viewport.SetContent("Traffic Analysis Feed cleared. Waiting for new data...")
 }
 
@@ -87,37 +109,31 @@ func (m analysisModel) Update(msg tea.Msg) (analysisModel, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.viewport.Width = msg.Width
-		// Height is now managed in View() or via a calculation here
+		m.rebuildViewport()
 	}
 	m.viewport, cmd = m.viewport.Update(msg)
 	return m, cmd
 }
 
 func (m analysisModel) View() string {
-	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6")).Underline(true)
-	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6")).Underline(true).PaddingLeft(1)
+	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).PaddingLeft(1)
 
-	// Math for stability:
-	// title (1) + \n (1) + feedContainer (vpHeight + 2) + \n (1) + help (1) = TotalHeight
-	// 1 + 1 + vpHeight + 2 + 1 + 1 = vpHeight + 6
-	vpHeight := m.height - 6
+	vpHeight := m.height - 2
 	if vpHeight < 2 {
 		vpHeight = 2
 	}
 	m.viewport.Height = vpHeight
-	m.viewport.Width = m.width - 2
+	m.viewport.Width = m.width
 
-	feedContainer := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("238")).
-		Width(m.width).
-		Height(vpHeight + 2).
-		MaxHeight(vpHeight + 2).
-		Render(m.viewport.View())
+	wrapText := "Off"
+	if m.wrap {
+		wrapText = "On"
+	}
 
 	return lipgloss.JoinVertical(lipgloss.Left,
 		titleStyle.Render("INTERCEPTED TRAFFIC ANALYSIS"),
-		feedContainer,
-		helpStyle.Render(" [c] Clear Feed   [up/down] Scroll"),
+		m.viewport.View(),
+		helpStyle.Render(fmt.Sprintf(" [c] Clear Feed   [w] Wrap: %s   [up/down] Scroll", wrapText)),
 	)
 }

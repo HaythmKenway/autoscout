@@ -10,7 +10,7 @@ import (
 	"github.com/charmbracelet/log"
 )
 
-func SubdomainEnum(target string) error {
+func SubdomainEnum(target string, rateLimit string) error {
 	// 1. Controller manages connection
 	db, err := OpenDatabase()
 	if err != nil {
@@ -26,7 +26,7 @@ func SubdomainEnum(target string) error {
 		// continue even if error to try and get new ones
 	}
 
-	now, err := subdomain.Subdomain(target)
+	now, err := subdomain.Subdomain(target, rateLimit)
 	localUtils.CheckError(err)
 
 	localUtils.Logger(fmt.Sprintf("Previous subdomains count: %d", len(prev)), 3)

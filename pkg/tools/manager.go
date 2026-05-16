@@ -6,6 +6,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/HaythmKenway/autoscout/pkg/localUtils"
 )
 
 type Job struct {
@@ -14,6 +16,7 @@ type Job struct {
 	Target    string
 	StartTime time.Time
 	Cmd       *exec.Cmd
+	IsKilling bool
 }
 
 type JobManager struct {
@@ -64,18 +67,37 @@ func (m *JobManager) Unregister(id string) {
 }
 
 func (m *JobManager) StopJob(id string) error {
-	m.mu.RLock()
+	m.mu.Lock()
 	job, ok := m.jobs[id]
-	m.mu.RUnlock()
+	if ok {
+		job.IsKilling = true
+	}
+	m.mu.Unlock()
 
 	if !ok {
 		return fmt.Errorf("job not found: %s", id)
 	}
 
 	if job.Cmd != nil && job.Cmd.Process != nil {
-		// Kill the entire process group (negative PID)
-		return syscall.Kill(-job.Cmd.Process.Pid, syscall.SIGKILL)
+		pid := job.Cmd.Process.Pid
+		// 1. Try to kill the entire process group (negative PID)
+		err := syscall.Kill(-pid, syscall.SIGKILL)
+		if err == nil {
+			localUtils.Logger(fmt.Sprintf("[JobManager] Killed process group for job %s (PID: %d)", id, pid), 1)
+			return nil
+		}
+
+		// 2. Fallback: Kill the process directly if PGID kill failed
+		localUtils.Logger(fmt.Sprintf("[JobManager] PGID kill failed for job %s: %v. Trying direct PID kill.", id, err), 2)
+		if err := job.Cmd.Process.Kill(); err != nil {
+			localUtils.Logger(fmt.Sprintf("[JobManager] Direct kill failed for job %s: %v", id, err), 2)
+			return err
+		}
+		localUtils.Logger(fmt.Sprintf("[JobManager] Directly killed job %s (PID: %d)", id, pid), 1)
+		return nil
 	}
+	
+	localUtils.Logger(fmt.Sprintf("[JobManager] Job %s has no active process to kill", id), 2)
 	return nil
 }
 

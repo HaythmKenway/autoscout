@@ -1,6 +1,7 @@
 package httpx
 
 import (
+	"bufio"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -36,16 +37,26 @@ func assertInterfaces(v interface{}) string {
 
 // Httpx runs the tool and saves results to the DB.
 // It accepts *sql.DB to reuse the worker's connection.
-func Httpx(dbConn *sql.DB, domain string) {
-	localUtils.Logger("Running httpx on "+domain, 1)
+func Httpx(dbConn *sql.DB, domain string, rateLimit string) {
+	localUtils.Logger(fmt.Sprintf("Running httpx on %s (Rate: %s)", domain, rateLimit), 1)
+
+	if rateLimit == "" {
+		rateLimit = localUtils.GetRateLimit()
+	}
 
 	// Note: Ensure 'httpx' is in your system PATH
-	cmd := exec.Command("httpx", "-u", domain, "-title", "-x", "get", "-status-code", "-ip", "-json", "-fr")
+	args := []string{"-u", domain, "-title", "-x", "get", "-status-code", "-ip", "-json", "-fr", "-silent"}
+	if rateLimit != "" {
+		args = append(args, "-rl", rateLimit)
+	}
+	
+	cmd := exec.Command("httpx", args...)
 
-	stdout, err := cmd.CombinedOutput()
+	stdout, err := cmd.Output()
 	if err != nil {
-		// Don't crash if httpx fails (e.g., domain not found), just log it
-		localUtils.Logger(fmt.Sprintf("httpx failed for %s: %v", domain, err), 2)
+		// Log raw stdout/stderr for better debugging when command fails
+		stderrOutput, _ := cmd.CombinedOutput()
+		localUtils.Logger(fmt.Sprintf("httpx failed for %s: %v\nStdout/Stderr: %s", domain, err, string(stderrOutput)), 2)
 		return
 	}
 
@@ -55,11 +66,28 @@ func Httpx(dbConn *sql.DB, domain string) {
 	}
 
 	var result map[string]interface{}
-	// Unmarshal only parses the first JSON object it finds.
-	// If httpx returns multiple lines, we capture the first one (primary result).
-	if err := json.Unmarshal(stdout, &result); err != nil {
-		localUtils.Logger(fmt.Sprintf("Failed to parse httpx JSON for %s: %v", domain, err), 2)
-		return
+	// Use a scanner to find the line that contains the JSON object
+	foundJSON := false
+	scanner := bufio.NewScanner(strings.NewReader(string(stdout)))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "{") && strings.HasSuffix(line, "}") {
+			if err := json.Unmarshal([]byte(line), &result); err == nil {
+				foundJSON = true
+				break
+			}
+		}
+	}
+
+	if !foundJSON {
+		localUtils.Logger(fmt.Sprintf("Failed to find valid httpx JSON in output for %s. Raw output: %s", domain, string(stdout)), 2)
+		// Attempt to parse the entire output as a single JSON object if line-by-line fails
+		if err := json.Unmarshal([]byte(strings.TrimSpace(string(stdout))), &result); err != nil {
+			localUtils.Logger(fmt.Sprintf("Failed to parse httpx output as single JSON object for %s: %v. Raw output: %s", domain, err, string(stdout)), 2)
+			return // Skip saving to DB if we can't parse anything
+		}
+		// If the above unmarshal succeeded, foundJSON should be true, but we will proceed assuming it worked.
+		foundJSON = true // This is a fallback for cases where the entire output is one JSON line.
 	}
 	subdomain := domain
 	title := assertInterfaces(result["title"])
@@ -74,7 +102,7 @@ func Httpx(dbConn *sql.DB, domain string) {
 	ip := assertInterfaces(result["ip"])
 
 	// Pass the existing DB connection to AddUrl
-	if err := db.AddUrl(dbConn, subdomain, title, url, host, scheme, a, cname, tech, ip, port, statusCode); err != nil {
+	if err := db.AddUrl(dbConn, subdomain, title, url, host, scheme, a, cname, tech, ip, port, statusCode, ""); err != nil {
 		localUtils.Logger(fmt.Sprintf("Error saving URL to DB: %v", err), 2)
 	}
 

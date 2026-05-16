@@ -8,19 +8,27 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/HaythmKenway/autoscout/internal/db"
 	"github.com/HaythmKenway/autoscout/pkg/localUtils"
 )
 
 type BurpRequest struct {
-	URL     string            `json:"url"`
-	Method  string            `json:"method"`
-	Tool    string            `json:"tool"`
-	Headers map[string]string `json:"headers"`
-	Body    string            `json:"body"` // Base64 encoded
+	URL             string            `json:"url"`
+	Method          string            `json:"method"`
+	Tool            string            `json:"tool"`
+	Headers         map[string]string `json:"headers"`
+	Body            string            `json:"body"` // Base64 encoded
+	ResponseStatus  int               `json:"res_status,omitempty"`
+	ResponseHeaders map[string]string `json:"res_headers,omitempty"`
+	ResponseBody    string            `json:"res_body,omitempty"` // Base64 encoded
+	UserContext     string            `json:"user_context,omitempty"`
 }
 
 type BurpResponse struct {
@@ -36,13 +44,13 @@ type BurpModified struct {
 }
 
 type BurpManualRequest struct {
-	URL          string            `json:"url"`
-	Method       string            `json:"method"`
-	Tool         string            `json:"tool"`
-	Headers      map[string]string `json:"headers"`
-	RequestBody  string            `json:"request_body"`  // Base64 encoded
-	Status       int               `json:"status"`        // Optional
-	ResponseBody string            `json:"response_body"` // Base64 encoded, Optional
+	URL         string            `json:"url"`
+	Method      string            `json:"method"`
+	Tool        string            `json:"tool"`
+	Headers     map[string]string `json:"headers"`
+	RawRequest  string            `json:"raw_request"`  // Base64 encoded raw HTTP request
+	Status      int               `json:"status"`       // Optional
+	RawResponse string            `json:"raw_response"` // Base64 encoded raw HTTP response, Optional
 }
 
 var (
@@ -95,7 +103,9 @@ func RegisterRewrite(url, newBody string) {
 func checkRewrite(url string) (string, bool) {
 	mu.Lock()
 	defer mu.Unlock()
-	if RewriteRules == nil { return "", false }
+	if RewriteRules == nil {
+		return "", false
+	}
 	body, ok := RewriteRules[url]
 	return body, ok
 }
@@ -150,7 +160,7 @@ func StartServer(port string, workQueue chan BurpRequest) error {
 	}
 
 	localUtils.Logger(fmt.Sprintf("Attempting to start Burp Integration Server on %s", addr), 1)
-	
+
 	// Create a listener first to check for port conflicts immediately
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -179,6 +189,7 @@ func StopServer() {
 	defer mu.Unlock()
 
 	if !running || server == nil {
+		localUtils.Logger("Burp Server is not running, skipping stop.", 1)
 		return
 	}
 
@@ -222,6 +233,14 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 	decodedBody, _ := base64.StdEncoding.DecodeString(req.Body)
 	localUtils.Logger(fmt.Sprintf("[Burp -> %s] %s %s (%d bytes)", req.Tool, req.Method, req.URL, len(decodedBody)), 1)
 
+	// Auto-add domain to targets
+	go func() {
+		u, err := url.Parse(req.URL)
+		if err == nil {
+			db.AddTarget(u.Hostname())
+		}
+	}()
+
 	// Send to AI Orchestrator
 	if WorkQueue != nil && shouldAnalyze(req.Method, req.URL) {
 		WorkQueue <- req
@@ -242,7 +261,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 	// --- AI Heuristic Routing ---
 	if !isStaticAsset(req.URL) {
 		AddAnalysis(fmt.Sprintf("[%s] REQ: %s %s", req.Tool, req.Method, req.URL))
-		
+
 		// Check for parameters (Potential SQLi/XSS/Fuzzing)
 		if strings.Contains(req.URL, "?") || len(decodedBody) > 0 {
 			delegateToAgent("ParameterFuzzer", req.URL)
@@ -252,14 +271,14 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(strings.ToLower(req.URL), "/api/") {
 			delegateToAgent("APIAnalyzer", req.URL)
 		}
-		
+
 		// DEMO: Specific keyword modification
 		if strings.Contains(strings.ToLower(string(decodedBody)), "fuzz-me") {
 			localUtils.Logger("[AI] Detected 'fuzz-me' keyword. Modifying request...", 1)
 			fuzzed := strings.ReplaceAll(string(decodedBody), "fuzz-me", "AUTOSCOUT-FUZZED")
 			req.Body = base64.StdEncoding.EncodeToString([]byte(fuzzed))
 			AddAnalysis("AI: Modified request body (keyword 'fuzz-me' detected)")
-			
+
 			resp := BurpModified{Modified: true, Body: req.Body}
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(resp)
@@ -304,7 +323,7 @@ func handleResponse(w http.ResponseWriter, r *http.Request) {
 	// --- AI Heuristic Routing ---
 	if resp.Status == 200 && len(decodedBody) > 0 {
 		AddAnalysis(fmt.Sprintf("[%s] RES: Status %d (%d bytes)", resp.Tool, resp.Status, len(decodedBody)))
-		
+
 		// Check for sensitive info (PII/Secrets)
 		bodyStr := string(decodedBody)
 		if strings.Contains(bodyStr, "AWS_ACCESS_KEY") || strings.Contains(bodyStr, "API_KEY") || strings.Contains(bodyStr, "secret") {
@@ -336,6 +355,7 @@ func handleManual(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to read body", http.StatusInternalServerError)
 		return
 	}
+	localUtils.Logger(fmt.Sprintf("[DEBUG] Raw Manual JSON: %s", string(body)), 3)
 
 	var req BurpManualRequest
 	if err := json.Unmarshal(body, &req); err != nil {
@@ -346,25 +366,69 @@ func handleManual(w http.ResponseWriter, r *http.Request) {
 	localUtils.Logger(fmt.Sprintf("[Burp -> MANUAL] High-Priority Analysis for %s", req.URL), 1)
 	AddAnalysis("CRITICAL: Received Manual Investigation Task!")
 	AddAnalysis(fmt.Sprintf("TARGET: %s %s", req.Method, req.URL))
-	
-	// Send to Orchestrator as a normal request but maybe we should flag it as high priority later
+
+	// Save session to /tmp/autoscout
+	sessionID := time.Now().Format("20060102-150405")
+	saveManualSession(sessionID, req)
+
+	// Update urls table with session_id
+	go func() {
+		database, err := db.OpenDatabase()
+		if err == nil {
+			defer database.Close()
+			u, _ := url.Parse(req.URL)
+			host := u.Hostname()
+			db.AddUrl(database, host, "", req.URL, host, u.Scheme, "", "", "", "", u.Port(), fmt.Sprintf("%d", req.Status), sessionID)
+		}
+	}()
+
+	// Send to Orchestrator
 	if WorkQueue != nil {
+		decodedRawReq, _ := base64.StdEncoding.DecodeString(req.RawRequest)
 		WorkQueue <- BurpRequest{
-			URL:     req.URL,
-			Method:  req.Method,
-			Tool:    req.Tool,
-			Headers: req.Headers,
-			Body:    req.RequestBody,
+			URL:            req.URL,
+			Method:         req.Method,
+			Tool:           req.Tool,
+			Headers:        req.Headers,
+			Body:           base64.StdEncoding.EncodeToString(decodedRawReq), // Pass raw request as context
+			ResponseStatus: req.Status,
+			ResponseBody:   req.RawResponse,
 		}
 	}
 
 	if req.Status > 0 {
 		AddAnalysis(fmt.Sprintf("STATUS: %d", req.Status))
 	}
-	
+
 	delegateToAgent("DeepScanner", req.URL)
 
 	w.WriteHeader(http.StatusOK)
+}
+
+func saveManualSession(id string, req BurpManualRequest) {
+	dir := "/tmp/autoscout"
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		localUtils.Logger(fmt.Sprintf("Failed to create session dir: %v", err), 2)
+		return
+	}
+
+	// Save Raw Request
+	reqPath := filepath.Join(dir, id+".request")
+	decodedReq, _ := base64.StdEncoding.DecodeString(req.RawRequest)
+	if err := os.WriteFile(reqPath, decodedReq, 0644); err != nil {
+		localUtils.Logger(fmt.Sprintf("Failed to save .request file: %v", err), 2)
+	}
+
+	// Save Raw Response if exists
+	if req.RawResponse != "" {
+		resPath := filepath.Join(dir, id+".response")
+		decodedRes, _ := base64.StdEncoding.DecodeString(req.RawResponse)
+		if err := os.WriteFile(resPath, decodedRes, 0644); err != nil {
+			localUtils.Logger(fmt.Sprintf("Failed to save .response file: %v", err), 2)
+		}
+	}
+
+	localUtils.Logger(fmt.Sprintf("Manual session saved to %s/%s.*", dir, id), 1)
 }
 
 func isStaticAsset(u string) bool {

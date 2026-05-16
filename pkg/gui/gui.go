@@ -33,6 +33,7 @@ type model struct {
 	dashboardModel  dashboardModel
 	targetModel     targetModel
 	analysisModel   analysisModel
+	manualOverlay   manualOverlayModel
 	zm              *zone.Manager
 }
 
@@ -56,6 +57,15 @@ func getTerminalSize() (width int, height int) {
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
+	if m.manualOverlay.active {
+		var moCmd tea.Cmd
+		m.manualOverlay, moCmd = m.manualOverlay.Update(msg)
+		cmds = append(cmds, moCmd)
+		// We still want to handle escape key globally if needed, 
+		// but manualOverlay.Update already handles it to close itself.
+		return m, tea.Batch(cmds...)
+	}
+
 	switch msg := msg.(type) {
 	case TickMsg:
 		var dCmd tea.Cmd
@@ -68,10 +78,38 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.dashboardModel.burp_queue = []string{} // Clear after syncing
 
+		// Also update target model for real-time domain/URL sync
+		var tCmd tea.Cmd
+		m.targetModel, tCmd = m.targetModel.Update(msg)
+		cmds = append(cmds, tCmd)
+
+	case TriggerManualMsg:
+		m.manualOverlay.active = true
+		if msg.SessionID != "" {
+			m.manualOverlay.SetSession(msg.SessionID)
+		} else if msg.TargetURL != "" {
+			m.manualOverlay.SetTarget(msg.TargetURL)
+		} else {
+			latest := GetLatestSessionID()
+			if latest != "" {
+				m.manualOverlay.SetSession(latest)
+			}
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
+		case "m":
+			m.manualOverlay.active = !m.manualOverlay.active
+			if m.manualOverlay.active {
+				latest := GetLatestSessionID()
+				if latest != "" {
+					m.manualOverlay.SetSession(latest)
+				}
+			}
+			return m, nil
 		case "tab":
 			if m.activePanel == PanelLeft {
 				m.activePanel = PanelRight
@@ -101,6 +139,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "c":
 			if m.activeTab == 2 {
 				m.analysisModel.Clear()
+			}
+		case "w":
+			if m.activeTab == 2 {
+				m.analysisModel.ToggleWrap()
 			}
 		}
 
@@ -188,13 +230,13 @@ func (m *model) handleResize(w, h int) tea.Cmd {
 	if sidebarWidth < 15 { sidebarWidth = 15 }
 	if sidebarWidth > 30 { sidebarWidth = 30 }
 
-	// Calculate exact inner dimensions for content
-	// rightPanelTotal = Total - Sidebar - SidebarBorder(1)
+	// rightPanelTotalWidth = Total - Sidebar - SidebarSeparator(1)
 	rightPanelTotalWidth := w - sidebarWidth - 1
 	
-	// contentWidth (Inner) = total - Border(2) - Padding(2)
+	// Inner usable space for sub-models
+	// subtract 2 for rightPanel border and 2 for inner padding
 	contentWidth := rightPanelTotalWidth - 4
-	contentHeight := h - 2 // Top/Bottom border
+	contentHeight := h - 2 // subtract 2 for top/bottom borders
 
 	if contentWidth < 10 { contentWidth = 10 }
 	if contentHeight < 5 { contentHeight = 5 }
@@ -205,12 +247,18 @@ func (m *model) handleResize(w, h int) tea.Cmd {
 	m.settingsModel, sCmd = m.settingsModel.Update(subMsg)
 	m.targetModel, tCmd = m.targetModel.Update(subMsg)
 	m.analysisModel, aCmd = m.analysisModel.Update(subMsg)
-	return tea.Batch(dCmd, sCmd, tCmd, aCmd)
+	var moCmd tea.Cmd
+	m.manualOverlay, moCmd = m.manualOverlay.Update(tea.WindowSizeMsg{Width: w, Height: h})
+	return tea.Batch(dCmd, sCmd, tCmd, aCmd, moCmd)
 }
 
 func (m model) View() string {
 	if m.width < 30 || m.height < 10 {
 		return "Terminal too small"
+	}
+
+	if m.manualOverlay.active {
+		return m.manualOverlay.View()
 	}
 
 	sidebarWidth := int(float64(m.width) * 0.25)
@@ -232,7 +280,6 @@ func (m model) View() string {
 		}
 
 		label := fmt.Sprintf("%s %s", m.NavIcons[i], item)
-		// Width calculation: sidebarWidth - padding(2) - margin(1) = sidebarWidth - 3
 		rendered := style.Width(sidebarWidth - 3).Render(label)
 		navItems = append(navItems, m.zm.Mark(fmt.Sprintf("nav-%d", i), rendered))
 	}
@@ -258,12 +305,9 @@ func (m model) View() string {
 
 	// Render Right Panel (Content)
 	rightPanelTotalWidth := m.width - sidebarWidth - 1
-	contentWidth := rightPanelTotalWidth - 2 // Account for its own borders
-	contentHeight := m.height - 2
-
-	// Update inner content dimensions for sub-models
-	m.dashboardModel.dialog.width = contentWidth - 2 // Subtract Padding(0,1)
-	m.dashboardModel.dialog.height = contentHeight
+	// innerWidth = rightPanelTotalWidth - border(2)
+	innerWidth := rightPanelTotalWidth - 2
+	innerHeight := m.height - 2
 	
 	var content string
 	switch m.activeTab {
@@ -283,8 +327,8 @@ func (m model) View() string {
 	}
 
 	rightPanel := lipgloss.NewStyle().
-		Width(contentWidth).
-		Height(contentHeight).
+		Width(innerWidth).
+		Height(innerHeight).
 		Padding(0, 1).
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(borderColor).
@@ -315,8 +359,9 @@ func LoadGui(port string, workQueue chan burp.BurpRequest) error {
 
 	m.settingsModel = NewSettingsModel(rightWidth, h-4)
 	m.dashboardModel = NewDashboardModel(rightWidth, h-4, port, workQueue)
-	m.targetModel = NewTargetModel(rightWidth, h-4)
+	m.targetModel = NewTargetModel(rightWidth, h-4, m.zm)
 	m.analysisModel = NewAnalysisModel(rightWidth, h-4)
+	m.manualOverlay = NewManualOverlayModel(w, h)
 
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 
@@ -351,8 +396,9 @@ func SShHandler(s ssh.Session) (tea.Model, []tea.ProgramOption) {
 
 	m.settingsModel = NewSettingsModel(rightWidth, h-4)
 	m.dashboardModel = NewDashboardModel(rightWidth, h-4, "8081", nil)
-	m.targetModel = NewTargetModel(rightWidth, h-4)
+	m.targetModel = NewTargetModel(rightWidth, h-4, m.zm)
 	m.analysisModel = NewAnalysisModel(rightWidth, h-4)
+	m.manualOverlay = NewManualOverlayModel(w, h)
 	
 	return m, []tea.ProgramOption{tea.WithAltScreen()}
 }
