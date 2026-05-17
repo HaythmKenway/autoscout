@@ -72,17 +72,18 @@ func (m fileModel) Update(msg tea.Msg) (fileModel, tea.Cmd) {
 			case "Open Session":
 				return m, func() tea.Msg { return TriggerOpenSessionMsg{} }
 			case "Save Session":
-				return m, func() tea.Msg { return TriggerSaveSessionMsg{} }
+				// Promotion logic: Trigger the creation prompt to get a name
+				return m, func() tea.Msg { return TriggerCreateSessionMsg{} }
 			}
 		}
 	}
 	m.list, cmd = m.list.Update(msg)
 	return m, cmd
 }
-
 func (m fileModel) View() string {
-	return lipgloss.NewStyle().Padding(1, 2).Render(m.list.View())
+	return lipgloss.NewStyle().Padding(0, 1).Render(m.list.View())
 }
+
 
 type TriggerCreateSessionMsg struct{}
 type TriggerOpenSessionMsg struct{}

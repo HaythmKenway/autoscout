@@ -2,6 +2,8 @@ package gui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -103,6 +105,21 @@ func (m proxyModel) Update(msg tea.Msg) (proxyModel, tea.Cmd) {
 			case "enter":
 				name := m.input.Value()
 				if name != "" {
+					// Promotion logic: if we were in the ephemeral session, copy its files
+					if burp.CurrentSession == "Autoscout" {
+						src := "/tmp/autoscout/session_Autoscout"
+						dst := filepath.Join(os.ExpandEnv("$HOME/.autoscout/sessions"), name)
+						os.MkdirAll(dst, 0755)
+						
+						// Copy files (very basic implementation)
+						if files, err := os.ReadDir(src); err == nil {
+							for _, f := range files {
+								data, _ := os.ReadFile(filepath.Join(src, f.Name()))
+								os.WriteFile(filepath.Join(dst, f.Name()), data, 0644)
+							}
+						}
+					}
+					
 					burp.SetSession(name)
 					m.mode = modeProxyTable
 					m.input.Reset()
