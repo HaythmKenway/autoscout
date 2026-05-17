@@ -133,19 +133,20 @@ func GetSessions() []string {
 	return sessions
 }
 
+func GetSessionDir(name string) string {
+	if name == "" || name == "Autoscout" {
+		return "/tmp/autoscout/session_Autoscout"
+	}
+	return filepath.Join(os.ExpandEnv("$HOME/.autoscout/sessions"), name)
+}
+
 func SetSession(name string) {
 	mu.Lock()
 	CurrentSession = name
 	mu.Unlock()
 	
 	// Load history index if it exists
-	var dir string
-	if name != "" && name != "Autoscout" {
-		dir = filepath.Join(os.ExpandEnv("$HOME/.autoscout/sessions"), name)
-	} else {
-		dir = "/tmp/autoscout/session_Autoscout"
-	}
-
+	dir := GetSessionDir(name)
 	historyPath := filepath.Join(dir, "history.json")
 	data, err := os.ReadFile(historyPath)
 	if err == nil {
@@ -171,13 +172,7 @@ func saveHistoryIndex() {
 	data, _ := json.MarshalIndent(ProxyHistory, "", "  ")
 	historyMu.RUnlock()
 
-	var dir string
-	if session != "" && session != "Autoscout" {
-		dir = filepath.Join(os.ExpandEnv("$HOME/.autoscout/sessions"), session)
-	} else {
-		dir = "/tmp/autoscout/session_Autoscout"
-	}
-	
+	dir := GetSessionDir(session)
 	os.MkdirAll(dir, 0755)
 	os.WriteFile(filepath.Join(dir, "history.json"), data, 0644)
 }
@@ -478,12 +473,7 @@ func handleManual(w http.ResponseWriter, r *http.Request) {
 }
 
 func saveData(id, reqB64, resB64, session string) {
-	var dir string
-	if session != "" && session != "Autoscout" {
-		dir = filepath.Join(os.ExpandEnv("$HOME/.autoscout/sessions"), session)
-	} else {
-		dir = "/tmp/autoscout/session_Autoscout"
-	}
+	dir := GetSessionDir(session)
 	os.MkdirAll(dir, 0755)
 
 	if reqB64 != "" {
@@ -501,12 +491,7 @@ func saveManualSession(id string, req BurpManualRequest) {
 	session := CurrentSession
 	mu.Unlock()
 
-	var dir string
-	if session != "" && session != "Autoscout" {
-		dir = filepath.Join(os.ExpandEnv("$HOME/.autoscout/sessions"), session)
-	} else {
-		dir = "/tmp/autoscout/session_Autoscout"
-	}
+	dir := GetSessionDir(session)
 	os.MkdirAll(dir, 0755)
 
 	// Save Raw Request

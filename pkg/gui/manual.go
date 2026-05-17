@@ -106,13 +106,7 @@ func (m *manualOverlayModel) SetSession(id string) {
 	m.sessionID = id
 	m.targetURL = ""
 	
-	// Determine directory
-	var dir string
-	if burp.CurrentSession != "" {
-		dir = filepath.Join(os.ExpandEnv("$HOME/.autoscout/sessions"), burp.CurrentSession)
-	} else {
-		dir = "/tmp/autoscout"
-	}
+	dir := burp.GetSessionDir(burp.CurrentSession)
 
 	reqPath := filepath.Join(dir, id+".request")
 	if reqData, err := os.ReadFile(reqPath); err == nil {
@@ -311,12 +305,7 @@ func (m manualOverlayModel) Update(msg tea.Msg) (manualOverlayModel, tea.Cmd) {
 
 func (m *manualOverlayModel) saveChatHistory() {
 	if m.sessionID == "" { return }
-	var dir string
-	if burp.CurrentSession != "" {
-		dir = filepath.Join(os.ExpandEnv("$HOME/.autoscout/sessions"), burp.CurrentSession)
-	} else {
-		dir = "/tmp/autoscout"
-	}
+	dir := burp.GetSessionDir(burp.CurrentSession)
 	os.MkdirAll(dir, 0755)
 	data, _ := json.MarshalIndent(m.chat, "", "  ")
 	os.WriteFile(filepath.Join(dir, m.sessionID+".chat.json"), data, 0644)
@@ -327,12 +316,7 @@ func (m manualOverlayModel) executeAI(instruction string) tea.Cmd {
 		agent := ai.LoadBackend()
 		req := burp.BurpRequest{URL: m.targetURL, Tool: "MANUAL_GUI", UserContext: instruction}
 		if m.sessionID != "" {
-			var dir string
-			if burp.CurrentSession != "" {
-				dir = filepath.Join(os.ExpandEnv("$HOME/.autoscout/sessions"), burp.CurrentSession)
-			} else {
-				dir = "/tmp/autoscout"
-			}
+			dir := burp.GetSessionDir(burp.CurrentSession)
 			reqD, _ := os.ReadFile(filepath.Join(dir, m.sessionID+".request"))
 			req.Body = base64.StdEncoding.EncodeToString(reqD)
 			if resD, err := os.ReadFile(filepath.Join(dir, m.sessionID+".response")); err == nil {
@@ -441,12 +425,7 @@ func (m manualOverlayModel) View() string {
 }
 
 func GetLatestSessionID() string {
-	var dir string
-	if burp.CurrentSession != "" {
-		dir = filepath.Join(os.ExpandEnv("$HOME/.autoscout/sessions"), burp.CurrentSession)
-	} else {
-		dir = "/tmp/autoscout"
-	}
+	dir := burp.GetSessionDir(burp.CurrentSession)
 	files, _ := os.ReadDir(dir)
 	var s []string
 	for _, f := range files { if strings.HasSuffix(f.Name(), ".request") { s = append(s, strings.TrimSuffix(f.Name(), ".request")) } }
