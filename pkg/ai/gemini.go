@@ -12,6 +12,7 @@ import (
 
 	"github.com/HaythmKenway/autoscout/pkg/burp"
 	"github.com/HaythmKenway/autoscout/pkg/localUtils"
+	"github.com/HaythmKenway/autoscout/pkg/tools"
 )
 
 type GeminiBackend struct {
@@ -23,14 +24,14 @@ func NewGeminiBackend(apiKey, model string) *GeminiBackend {
 	if apiKey == "" {
 		apiKey = os.Getenv("GEMINI_API_KEY")
 	}
-	if model == "" {
-		model = "gemini-1.5-flash"
+	return &GeminiBackend{
+		APIKey: apiKey,
+		Model:  model,
 	}
-	return &GeminiBackend{APIKey: apiKey, Model: model}
 }
 
 func (g *GeminiBackend) Name() string {
-	return "Gemini"
+	return "Gemini (" + g.Model + ")"
 }
 
 func (g *GeminiBackend) Analyze(req burp.BurpRequest) (*AIPlan, error) {
@@ -46,6 +47,7 @@ func (g *GeminiBackend) Analyze(req burp.BurpRequest) (*AIPlan, error) {
 
 	headersJSON, _ := json.MarshalIndent(req.Headers, "", "  ")
 	userKnowledge := LoadKnowledge()
+	toolContext := tools.GetToolCapabilitiesJSON()
 
 	var responseContext string
 	if req.ResponseStatus > 0 {
@@ -77,6 +79,9 @@ Body: %s
 ### User Training & Expertise:
 %s
 
+### Available Security Tools (MCP-Interface):
+%s
+
 ### Instructions:
 1. **Analyze Request**: Carefully inspect headers and the body for sensitive data or injection points. Check for interesting headers like Authorization, Cookies, or custom headers. Use the provided "User Training" to guide your analysis.
    - **BE SELECTIVE**: Do not recommend tools for general "recon" if the request looks benign. 
@@ -88,9 +93,9 @@ Body: %s
    - Parameters: If parameters are detected, use dalfox or sqlmap.
 
 3. **Stealth and Rate Limiting**:
-   - ALWAYS include a "rate_limit" parameter in "params" for high-volume tools (ffuf, katana, gospider, nuclei).
-   - If the target is a major platform (e.g., reddit, google, github), set "rate_limit" to a low value (e.g., 5-10 requests per second) to avoid blocking.
-   - Example for FFUF on a sensitive target: {"tool": "ffuf", "target": "URL", "params": {"rate_limit": "5"}}
+   - YOU MUST include a "rate_limit" parameter in "params" for high-volume tools (ffuf, katana, nuclei).
+   - Use "5" as a standard safe value for req/s.
+   - FAILURE to provide a rate limit will result in system blocks.
 
 4. **Output Format**: Output ONLY a JSON object with this exact structure:
 {
@@ -99,7 +104,7 @@ Body: %s
   "actions": [{"tool": "toolname", "target": "string", "params": {"key": "val"}}],
   "rewrite_rules": ["modified_body_base64_string_if_needed"]
 }
-No preamble, no markdown formatting. Just raw JSON.`, userInstructions, req.Method, req.URL, req.Tool, string(headersJSON), bodyStr, responseContext, userKnowledge)
+No preamble, no markdown formatting. Just raw JSON.`, userInstructions, req.Method, req.URL, req.Tool, string(headersJSON), bodyStr, responseContext, userKnowledge, toolContext)
 
 	localUtils.Logger(fmt.Sprintf("[Gemini DEBUG] Outgoing Prompt (Truncated 500 chars): %s...", prompt[:500]), 3)
 
@@ -148,7 +153,7 @@ No preamble, no markdown formatting. Just raw JSON.`, userInstructions, req.Meth
 	}
 
 	if len(result.Candidates) == 0 || len(result.Candidates[0].Content.Parts) == 0 {
-		return nil, fmt.Errorf("gemini returned empty result")
+		return nil, fmt.Errorf("no candidates returned from Gemini")
 	}
 
 	rawJSON := result.Candidates[0].Content.Parts[0].Text

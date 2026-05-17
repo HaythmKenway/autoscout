@@ -12,6 +12,7 @@ import (
 
 	"github.com/HaythmKenway/autoscout/pkg/burp"
 	"github.com/HaythmKenway/autoscout/pkg/localUtils"
+	"github.com/HaythmKenway/autoscout/pkg/tools"
 )
 
 type CodexBackend struct {
@@ -19,11 +20,15 @@ type CodexBackend struct {
 }
 
 func NewCodexBackend(model string) *CodexBackend {
-	return &CodexBackend{Model: model}
+	// The model parameter is ignored as we use the system 'codex' binary's 
+	// default configuration (OpenAI/ChatGPT)
+	return &CodexBackend{
+		Model: "System-Codex",
+	}
 }
 
 func (c *CodexBackend) Name() string {
-	return "Codex"
+	return "Codex (System Binary)"
 }
 
 func (c *CodexBackend) Analyze(req burp.BurpRequest) (*AIPlan, error) {
@@ -37,6 +42,7 @@ func (c *CodexBackend) Analyze(req burp.BurpRequest) (*AIPlan, error) {
 	headersJSON, _ := json.MarshalIndent(req.Headers, "", "  ")
 	userKnowledge := LoadKnowledge()
 	userSkills := LoadSkills()
+	toolContext := tools.GetToolCapabilitiesJSON()
 
 	var responseContext string
 	if req.ResponseStatus > 0 {
@@ -76,6 +82,11 @@ The following Markdown skills are user-authored playbooks. Follow them when they
 
 %s
 
+### AVAILABLE SECURITY TOOLS (MCP-INTERFACE)
+The following JSON defines the available tools and their accepted parameters. Use this to construct your "actions".
+
+%s
+
 ### TASK
 Provide a structured JSON assessment. Do not execute any tools yourself. 
 Be highly selective. ONLY recommend tools if you see strong, clear evidence of a specific vulnerability class. 
@@ -90,39 +101,16 @@ OUTPUT FORMAT (RAW JSON ONLY):
   "actions": [{"tool": "nuclei|sqlmap|dalfox|ffuf", "target": "url", "params": {"rate_limit": "5"}}],
   "rewrite_rules": ["<base64_modified_payload>"]
 }
-`, userInstructions, req.Method, req.URL, req.Tool, string(headersJSON), bodyStr, responseContext, userKnowledge, userSkills)
+`, userInstructions, req.Method, req.URL, req.Tool, string(headersJSON), bodyStr, responseContext, userKnowledge, userSkills, toolContext)
 
 	// Use context with timeout for codex command
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	// Use codex exec --json --ephemeral
-	// Added --ignore-user-config and --ignore-rules to ensure environment consistency
-	// Added "-" to explicitly read from stdin and suppress "Reading prompt from stdin..." message
-	args := []string{
-		"exec",
-		"--json",
-		"--ephemeral",
-		"--skip-git-repo-check",
-		"--dangerously-bypass-approvals-and-sandbox",
-		"--ignore-user-config",
-		"--ignore-rules",
-		"-",
-	}
-	if c.Model != "" {
-		args = append(args, "--model", c.Model)
-	}
-
-	cmd := exec.CommandContext(ctx, "codex", args...)
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return nil, err
-	}
-
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, err
-	}
+	// Use system 'codex' binary
+	cmd := exec.CommandContext(ctx, "codex", "exec", "--ephemeral", "--json", "-")
+	stdin, _ := cmd.StdinPipe()
+	stdout, _ := cmd.StdoutPipe()
 	stderr, _ := cmd.StderrPipe()
 
 	if err := cmd.Start(); err != nil {
@@ -132,73 +120,54 @@ OUTPUT FORMAT (RAW JSON ONLY):
 	// Write prompt and close stdin to signal EOF
 	go func() {
 		defer stdin.Close()
-		localUtils.Logger(fmt.Sprintf("[Codex DEBUG] Sending prompt (Log truncated to 500 chars): %s...", prompt[:min(len(prompt), 500)]), 3)
 		fmt.Fprint(stdin, prompt)
 	}()
 
-	var rawJSON string
+	var finalResponse string
 	var codexError string
-	scanner := bufio.NewScanner(stdout)
-	// Use a larger buffer (1MB) for Codex output
-	buf := make([]byte, 0, 64*1024)
-	scanner.Buffer(buf, 1024*1024)
 
-	for scanner.Scan() {
-		line := scanner.Text()
-		localUtils.Logger(fmt.Sprintf("[Codex DEBUG] Incoming Stream: %s", line), 3)
-		var event struct {
-			Type string `json:"type"`
-			Item struct {
-				Text string `json:"text"`
-			} `json:"item"`
-			Error struct {
-				Message string `json:"message"`
-			} `json:"error"`
-		}
-		if err := json.Unmarshal([]byte(line), &event); err == nil {
-			if event.Type == "item.completed" && event.Item.Text != "" {
-				rawJSON = event.Item.Text
-			} else if event.Type == "error" {
-				codexError = event.Error.Message
+	// Scanner to read JSONL output
+	go func() {
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			line := scanner.Text()
+			var event struct {
+				Type string `json:"type"`
+				Item struct {
+					Text string `json:"text"`
+				} `json:"item"`
+			}
+			if err := json.Unmarshal([]byte(line), &event); err == nil {
+				if event.Type == "item.completed" && event.Item.Text != "" {
+					finalResponse = event.Item.Text
+				}
 			}
 		}
-	}
+	}()
 
-	var stderrBuf strings.Builder
-	errScanner := bufio.NewScanner(stderr)
-	for errScanner.Scan() {
-		line := errScanner.Text()
-		stderrBuf.WriteString(line + "\n")
-	}
-
-	cmdErr := cmd.Wait()
-	if ctx.Err() == context.DeadlineExceeded {
-		localUtils.Logger("[Codex ERROR] Command timed out after 60s", 2)
-		return nil, fmt.Errorf("codex timed out")
-	}
-
-	if cmdErr != nil || codexError != "" {
-		errMsg := stderrBuf.String()
-		if codexError != "" {
-			errMsg = fmt.Sprintf("Codex Event Error: %s | Raw Stderr: %s", codexError, errMsg)
+	// Scanner for errors
+	go func() {
+		scanner := bufio.NewScanner(stderr)
+		for scanner.Scan() {
+			codexError += scanner.Text()
 		}
-		// If we have rawJSON, it might have actually succeeded despite a non-zero exit
-		if rawJSON == "" {
-			localUtils.Logger(fmt.Sprintf("[DEBUG] Codex Failed (%v). Stderr: %s", cmdErr, errMsg), 3)
-			return nil, fmt.Errorf("codex execution failed (%v): %s", cmdErr, errMsg)
+	}()
+
+	if err := cmd.Wait(); err != nil {
+		return nil, fmt.Errorf("codex error: %v (stderr: %s)", err, codexError)
+	}
+
+	if finalResponse == "" {
+		return nil, fmt.Errorf("codex returned empty response (stderr: %s)", codexError)
+	}
+
+	// Attempt to extract JSON if there was conversational fluff
+	rawJSON := finalResponse
+	if start := strings.Index(rawJSON, "{"); start != -1 {
+		if end := strings.LastIndex(rawJSON, "}"); end != -1 && end > start {
+			rawJSON = rawJSON[start : end+1]
 		}
-		localUtils.Logger(fmt.Sprintf("[DEBUG] Codex exited with error but returned JSON: %v", cmdErr), 3)
 	}
-
-	if rawJSON == "" {
-		return nil, fmt.Errorf("codex returned no agent message")
-	}
-
-	// Sometimes LLMs wrap JSON in backticks
-	rawJSON = strings.TrimPrefix(rawJSON, "```json")
-	rawJSON = strings.TrimPrefix(rawJSON, "```")
-	rawJSON = strings.TrimSuffix(rawJSON, "```")
-	rawJSON = strings.TrimSpace(rawJSON)
 
 	var plan AIPlan
 	if err := json.Unmarshal([]byte(rawJSON), &plan); err != nil {

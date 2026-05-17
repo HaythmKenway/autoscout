@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/HaythmKenway/autoscout/internal/db"
+	"github.com/HaythmKenway/autoscout/internal/scheduler"
 	"github.com/HaythmKenway/autoscout/pkg/ai"
 	"github.com/HaythmKenway/autoscout/pkg/burp"
 	"github.com/HaythmKenway/autoscout/pkg/localUtils"
@@ -34,7 +35,13 @@ func NewOrchestrator(agent ai.AIAgent) *Orchestrator {
 func (o *Orchestrator) Start() {
 	localUtils.Logger("AI Orchestrator started [v2.2-log-fix]", 1)
 	for req := range o.Requests {
-		go o.processRequest(req)
+		// Only process automated requests if the global scanner is running
+		// Always process manual requests from Burp or the GUI
+		if req.Tool == "MANUAL" || req.Tool == "MANUAL_GUI" || scheduler.IsRunning() {
+			go o.processRequest(req)
+		} else {
+			localUtils.Logger(fmt.Sprintf("[Orchestrator] Skipping automated analysis for %s (Scanner is OFFLINE)", req.URL), 3)
+		}
 	}
 }
 
@@ -151,6 +158,11 @@ func addAnalysis(msg string) {
 func buildRoutes(req burp.BurpRequest, bodyStr string, plan *ai.AIPlan) []ai.AIAction {
 	var actions []ai.AIAction
 
+	// 1. Rule-based Heuristic Fallback
+	classes := classifyRequest(req, bodyStr, plan)
+	actions = append(actions, routesForClassifications(req, classes)...)
+
+	// 2. AI-Suggested Actions
 	if plan != nil {
 		for _, action := range plan.Actions {
 			if normalized, ok := normalizeAction(req, action); ok {

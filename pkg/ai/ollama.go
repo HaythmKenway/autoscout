@@ -10,36 +10,35 @@ import (
 
 	"github.com/HaythmKenway/autoscout/pkg/burp"
 	"github.com/HaythmKenway/autoscout/pkg/localUtils"
+	"github.com/HaythmKenway/autoscout/pkg/tools"
 )
 
 type OllamaBackend struct {
-	BaseURL string
-	Model   string
+	Model string
+}
+
+func NewOllamaBackend(model string) *OllamaBackend {
+	if model == "" {
+		model = "llama3:8b"
+	}
+	return &OllamaBackend{
+		Model: model,
+	}
+}
+
+func (o *OllamaBackend) Name() string {
+	return "Ollama (" + o.Model + ")"
 }
 
 type ollamaRequest struct {
 	Model  string `json:"model"`
 	Prompt string `json:"prompt"`
 	Stream bool   `json:"stream"`
-	Format string `json:"format"` // "json" for structured output
+	Format string `json:"format,omitempty"`
 }
 
 type ollamaResponse struct {
 	Response string `json:"response"`
-}
-
-func NewOllamaBackend(baseURL, model string) *OllamaBackend {
-	if baseURL == "" {
-		baseURL = "http://localhost:11434"
-	}
-	if model == "" {
-		model = "llama3.2:latest"
-	}
-	return &OllamaBackend{BaseURL: baseURL, Model: model}
-}
-
-func (o *OllamaBackend) Name() string {
-	return "Ollama (" + o.Model + ")"
 }
 
 func (o *OllamaBackend) Analyze(req burp.BurpRequest) (*AIPlan, error) {
@@ -51,6 +50,7 @@ func (o *OllamaBackend) Analyze(req burp.BurpRequest) (*AIPlan, error) {
 
 	headersJSON, _ := json.MarshalIndent(req.Headers, "", "  ")
 	userKnowledge := LoadKnowledge()
+	toolContext := tools.GetToolCapabilitiesJSON()
 
 	var responseContext string
 	if req.ResponseStatus > 0 {
@@ -79,6 +79,10 @@ Body: %s
 %s
 ### User Training & Expertise:
 %s
+
+### Available Security Tools (MCP-Interface):
+%s
+
 ### Instructions:
 1. **Analyze Request**: Carefully inspect headers and the body for sensitive data, injection points, or complex logic.
    - **STRICT NO-FUZZ RULE**: DO NOT trigger fuzzing tools (ffuf, dalfox, sqlmap) on static assets (.js, .css, .png, etc.) or simple informational GET requests with no parameters.
@@ -86,17 +90,17 @@ Body: %s
    - **GraphQL/API**: Only perform targeted scans if you see complex queries or potential for BOLA/IDOR. Avoid generic wordlist fuzzing on established APIs unless necessary.
 
 2. **Stealth and Rate Limiting**:
-   - YOU MUST include a "rate_limit" parameter in "params" for high-volume tools (ffuf, katana, gospider, nuclei).
+   - YOU MUST include a "rate_limit" parameter in "params" for high-volume tools (ffuf, katana, nuclei).
    - FAILURE to provide a rate limit will result in system blocks. Use "5" as a standard safe value.
 
 3. **Output Format**: Provide your analysis in STRICT JSON format with the following structure:
    {
      "thinking": "detailed reasoning",
      "vulnerabilities_suspected": ["type1", "type2"],
-     "actions": [{"tool": "toolname", "target": "url", "params": {"key": "val"}}],
+     "actions": [{"tool": "toolname", "target": "url", "params": {"rate_limit": "5"}}],
      "rewrite_rules": ["modified_body_base64"]
    }
-   Only output the JSON object. No preamble.`, userInstructions, req.Method, req.URL, req.Tool, string(headersJSON), bodyStr, responseContext, userKnowledge)
+   Only output the JSON object. No preamble.`, userInstructions, req.Method, req.URL, req.Tool, string(headersJSON), bodyStr, responseContext, userKnowledge, toolContext)
 
 	ollamaReq := ollamaRequest{
 		Model:  o.Model,
@@ -110,8 +114,9 @@ Body: %s
 		return nil, err
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Post(o.BaseURL+"/api/generate", "application/json", bytes.NewBuffer(jsonData))
+	url := "http://localhost:11434/api/generate"
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Post(url, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("ollama connection failed: %v", err)
 	}
@@ -122,13 +127,8 @@ Body: %s
 		return nil, fmt.Errorf("failed to decode ollama response: %v", err)
 	}
 
-	if ollamaResp.Response == "" {
-		return nil, fmt.Errorf("ollama returned an empty response (check if model '%s' is installed)", o.Model)
-	}
-
 	var plan AIPlan
 	if err := json.Unmarshal([]byte(ollamaResp.Response), &plan); err != nil {
-		// Log the failed JSON for debugging
 		localUtils.Logger(fmt.Sprintf("[DEBUG] AI returned invalid JSON: %s", ollamaResp.Response), 3)
 		return nil, fmt.Errorf("failed to parse AI plan JSON: %v", err)
 	}

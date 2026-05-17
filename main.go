@@ -20,6 +20,7 @@ import (
 	gui_module "github.com/HaythmKenway/autoscout/pkg/gui"
 	"github.com/HaythmKenway/autoscout/pkg/httpx"
 	"github.com/HaythmKenway/autoscout/pkg/localUtils"
+	"github.com/HaythmKenway/autoscout/pkg/tools"
 
 	"github.com/charmbracelet/ssh"
 	"github.com/charmbracelet/wish"
@@ -99,19 +100,30 @@ func main() {
 			localUtils.Logger(fmt.Sprintf("GUI failed: %v", err), 2)
 			fmt.Printf("Error starting GUI: %v\n", err)
 		}
+		Cleanup()
 		return
 	}
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
 	if *deamon {
 		localUtils.Logger("Starting application in deamon mode", 1)
 		scheduler.Skibbidi(true)
-		select {}
+		<-sigChan
+	} else if *burpMode {
+		fmt.Printf("Burp Integration API running on port %s. Press Ctrl+C to stop.\n", *burpPort)
+		<-sigChan
 	}
 
-	if *burpMode && !*gui && !*deamon {
-		fmt.Printf("Burp Integration API running on port %s. Press Ctrl+C to stop.\n", *burpPort)
-		select {}
-	}
+	Cleanup()
+}
+
+func Cleanup() {
+	localUtils.Logger("Shutting down Autoscout...", 1)
+	tools.DefaultJobManager.StopAllJobs()
+	// Allow a brief moment for subprocesses to receive signals
+	time.Sleep(500 * time.Millisecond)
 }
 
 func sshdeeznuts() {
@@ -145,4 +157,5 @@ func sshdeeznuts() {
 	if err := s.Shutdown(ctx); err != nil && !errors.Is(err, ssh.ErrServerClosed) {
 		localUtils.Logger(fmt.Sprintf("Could not stop server: %v", err), 1)
 	}
+	Cleanup()
 }

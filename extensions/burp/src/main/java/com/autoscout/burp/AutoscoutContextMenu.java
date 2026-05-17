@@ -31,18 +31,14 @@ public class AutoscoutContextMenu implements ContextMenuItemsProvider {
         
         List<Component> menuItems = new ArrayList<>();
 
-        JMenuItem sendReq = new JMenuItem("Send to Autoscout (Req)");
-        sendReq.addActionListener(e -> sendManualToAutoscout(event, false));
+        JMenuItem sendBtn = new JMenuItem("Send to Autoscout");
+        sendBtn.addActionListener(e -> sendManualToAutoscout(event));
 
-        JMenuItem sendReqResp = new JMenuItem("Send to Autoscout (Req & Resp)");
-        sendReqResp.addActionListener(e -> sendManualToAutoscout(event, true));
-
-        menuItems.add(sendReq);
-        menuItems.add(sendReqResp);
+        menuItems.add(sendBtn);
         return menuItems;
     }
 
-    private void sendManualToAutoscout(ContextMenuEvent event, boolean includeResponse) {
+    private void sendManualToAutoscout(ContextMenuEvent event) {
         List<HttpRequestResponse> toSend = new ArrayList<>();
         
         if (event.selectedRequestResponses() != null && !event.selectedRequestResponses().isEmpty()) {
@@ -56,11 +52,12 @@ public class AutoscoutContextMenu implements ContextMenuItemsProvider {
             return;
         }
 
-        ui.log("[DEBUG] Clicked 'Send to Autoscout (" + (includeResponse ? "Req & Resp" : "Req") + ")' for " + toSend.size() + " items.");
+        ui.log("[DEBUG] Clicked 'Send to Autoscout' for " + toSend.size() + " items.");
         new Thread(() -> {
             for (HttpRequestResponse message : toSend) {
                 ui.log("[MANUAL] Sending to Autoscout: " + message.request().url());
-                handler.sendManual(message, includeResponse);
+                // Always try to include response, but server handles if it's missing
+                handler.sendManual(message, true);
             }
         }).start();
     }

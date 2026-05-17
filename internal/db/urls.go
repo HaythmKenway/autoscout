@@ -31,7 +31,7 @@ func AddUrl(db *sql.DB, subdomain string, title string, url string, host string,
 		localUtils.Logger(fmt.Sprintf("Error inserting URL data: %v", err), 2)
 		return err
 	}
-	localUtils.Logger("URL Data inserted/updated successfully", 1)
+	localUtils.Logger("URL Data inserted/updated successfully", 3)
 	return nil
 }
 

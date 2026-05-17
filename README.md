@@ -8,7 +8,7 @@ Autoscout automates popular bug bounty hunting tools into a unified platform, fe
 - **Burp Suite Integration**: Seamlessly captures traffic from Burp and feeds it into the AI analysis pipeline.
 - **Deep Traffic Analysis**: Captures full HTTP context, including Method, URL, Headers, and Body (Base64 decoded).
 - **Stealth & Rate Limiting**: AI-managed rate limiting to prevent IP blocking on major platforms.
-- **AI Training (Knowledge Base)**: Customize the AI's reasoning by adding your own expertise and heuristics to `~/.config/autoscout/knowledge.md`.
+- **AI Training (Knowledge Base + Skills)**: Customize the AI's reasoning with global notes in `~/.config/autoscout/knowledge.md` and focused Markdown skills in `~/.config/autoscout/skills`.
 - **Dynamic Wordlist Resolution**: Automatically finds or generates wordlists for fuzzing tools.
 - **Multi-Mode Operation**:
   - **Daemon Mode**: Continuous automated scanning.
@@ -23,7 +23,20 @@ go install -v github.com/HaythmKenway/autoscout@latest
 ### Configuration
 1. **Notify**: Setup `$HOME/.config/notify/provider-config.yaml`.
 2. **User Config**: Global settings at `$HOME/.config/autoscout/user-config.yaml`.
-3. **AI Training**: Add your custom heuristics to `$HOME/.config/autoscout/knowledge.md`.
+3. **AI Training**: Add global heuristics to `$HOME/.config/autoscout/knowledge.md`.
+4. **AI Skills**: Add focused Markdown playbooks as `$HOME/.config/autoscout/skills/*.md` or `$HOME/.config/autoscout/skills/<name>/SKILL.md`.
+
+Example skill:
+
+```markdown
+# IDOR Review
+
+Use this when URLs include account, user, org, invoice, file, or UUID identifiers.
+
+- Compare object IDs across roles.
+- Flag missing tenant scoping on nested API routes.
+- Prefer low-rate verification with ffuf or a manual replay action.
+```
 
 ### Project Status
 - [x] Subdomain Enumeration & Tracking

@@ -1,53 +1,40 @@
 # Autoscout - AI-Driven Recon & Vulnerability Analysis Framework
 
 ## Project Overview
-Autoscout is a comprehensive security reconnaissance and vulnerability analysis platform. It integrates traditional security tools (Dalfox, SQLMap, Nuclei, etc.) with AI-driven orchestration to automate the bug hunting process. It features a Burp Suite integration for traffic ingestion and a Terminal User Interface (TUI) for real-time monitoring.
+Autoscout is a comprehensive security reconnaissance and vulnerability analysis platform. It integrates traditional security tools (Dalfox, SQLMap, Nuclei, etc.) with AI-driven orchestration to automate the bug hunting process. It features a high-density, professional Terminal User Interface (TUI) and deep integration with Burp Suite.
 
 ## Core Architecture
 - **Language**: Primarily Go (v1.21+), with a Java-based Burp Suite extension.
 - **Database**: SQLite3 (`autoscout.db`), managed via `internal/db`.
-- **AI Orchestration**: Logic in `pkg/orchestrator` using backends defined in `pkg/ai` (Ollama, Gemini, Codex).
-- **GUI/TUI**: Built using `charmbracelet/bubbletea` and `wish` for SSH support.
-- **Tools Integration**: Wrappers for external tools located in `pkg/`.
-
-## Key Directory Structure
-- `internal/`: Private application logic.
-    - `db/`: Database schema, queries, and initialization.
-    - `controller/`: Core business workflows and tool execution logic.
-    - `scheduler/`: Background task management.
-- `pkg/`: Reusable packages and tool integrations.
-    - `ai/`: AI agent interfaces and backend implementations.
-    - `orchestrator/`: Decisions and routing of HTTP requests to security tools.
-    - `gui/`: TUI implementation (Bubbletea models and views).
-    - `burp/`: Server to receive traffic from the Burp extension.
-- `extensions/burp/`: Java source code for the Burp Suite extension.
+- **AI Orchestration**: Logic in `pkg/orchestrator` using backends in `pkg/ai` (Ollama, Gemini, Codex).
+- **GUI/TUI**: Built with `charmbracelet/bubbletea`, `lipgloss`, and `bubblezone`.
+- **Storage**: Manual investigation forensic files are stored in `/tmp/autoscout/`.
 
 ## Coding Conventions
-- **Error Handling**: Use `localUtils.CheckError(err)` for critical errors or `localUtils.Logger(msg, level)` for logging (1: Info, 2: Error).
-- **Concurrency**: Extensive use of goroutines for background scanning and AI analysis. Ensure thread-safety when accessing shared resources.
-- **Database**: Always use the `OpenDatabase()` function from `internal/db` to get a connection. Ensure tables are initialized via `CheckTables()`.
-- **AI Integration**: New AI backends must implement the `AIAgent` interface in `pkg/ai/ai.go`. Structured output is expected via the `AIPlan` struct.
-- **Configuration**: Global settings are stored in `~/.config/autoscout/user-config.yaml`.
+- **Error Handling**: Use `localUtils.CheckError(err)` for critical failures; `localUtils.Logger(msg, level)` for logging.
+- **Concurrency**: Use goroutines for tool execution; ensure thread-safe DB access via `OpenDatabase()`.
+- **Data Integrity**: 
+    - Separate encoding: Raw Burp requests/responses must be base64-encoded independently.
+    - Contextual link: Every URL in the `urls` table should be linked to a `session_id` if captured from Burp.
+- **AI Prompts**: 
+    - Prioritize `UserContext` instructions.
+    - Use `TruncateBody` to limit bodies to 10KB while keeping full headers.
 
-## Development Workflows
+## specialized UI/UX Mandates
+The project follows strict professional TUI standards:
+- **No Double-Delegation**: `tea.WindowSizeMsg` must be processed ONLY by the parent model to calculate sub-pane dimensions. Never delegate the raw `WindowSizeMsg` to sub-models; instead, propagate the correctly calculated `subMsg`.
+- **Responsive Design**: All layout math must use `TerminalHeight - 4` as the content budget to account for global status bars and borders.
+- **Frame Accounting**: Subtract border/padding overhead (usually 4 chars width, 2 lines height) from all inner component calculations.
+- **Keyboard-First**: Implement vim-style `j/k` navigation, `Tab` focus cycling, and a global `?` help overlay.
+- **Mouse-Augmented**: Use `bubblezone` to ensure all buttons, tabs, and table rows are clickable.
+- **Visual Feedback**: The active pane MUST have a distinct `m.theme.Accent` border.
 
-### Database Changes
-1. Add new table creation logic in `internal/db/db.go`.
-2. Add queries in `internal/db/queries.go` or specific domain files (e.g., `vulnerabilities.go`).
-3. Update `CheckTables()` to include the new initialization logic.
+## Key Specialized Agent Skills
+Always adhere to these expert guides when modifying the UI:
+- **responsive-tui**: Rules for percentage-based layouts and adaptive scaling.
+- **tui-ux-pro**: Professional patterns (help modals, breadcrumbs, focus states) inspired by `lazygit` and `k9s`.
 
-### Adding a New Tool
-1. Create a wrapper in `pkg/tools/` or a dedicated package if complex.
-2. Register the tool in `internal/controller/`.
-3. Update the `AIAction` handling in `pkg/orchestrator/orchestrator.go` to support the new tool.
-
-### Modifying the GUI
-1. Locate the relevant component in `pkg/gui/` (e.g., `dashboard.go`, `target.go`).
-2. Autoscout uses the Bubbletea Elm-like architecture (Model, Update, View).
-3. Ensure responsiveness for both local terminal and SSH sessions.
-4. **Analysis Tab**: Supports toggling word wrap with the `w` key and clearing the feed with the `c` key.
-
-## Testing
-- Run unit tests: `go test ./...`
-- Verify database migrations/initialization: `go run main.go -reset` (Warning: Clears data).
-- For AI logic, use mock `AIAgent` implementations to verify `AIPlan` processing.
+## Testing & Validation
+- **Unit Tests**: `go test ./...`
+- **View Tests**: Use `pkg/gui/target_test.go` as a template for rendering diagnostic frames to verify UI stability across standard (120x30) and small (80x24) terminals.
+- **Build**: ALWAYS run `./build.sh` after changes to verify both Go and Java components.

@@ -53,6 +53,15 @@ type BurpManualRequest struct {
 	RawResponse string            `json:"raw_response"` // Base64 encoded raw HTTP response, Optional
 }
 
+type ProxyEntry struct {
+	SessionID string    `json:"id"`
+	Method    string    `json:"method"`
+	URL       string    `json:"url"`
+	Status    string    `json:"status"`
+	Tool      string    `json:"tool"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
 var (
 	mu      sync.Mutex
 	running bool
@@ -61,6 +70,11 @@ var (
 	// Traffic Stats
 	RequestsIntercepted  int
 	ResponsesIntercepted int
+
+	// Proxy History & Sessions
+	CurrentSession string
+	ProxyHistory   []ProxyEntry
+	historyMu      sync.RWMutex
 
 	// Analysis Feed
 	AnalysisQueue []string
@@ -75,6 +89,85 @@ var (
 	analysisCache map[string]time.Time
 	cacheMu       sync.Mutex
 )
+
+func GetProxyHistory() []ProxyEntry {
+	historyMu.RLock()
+	defer historyMu.RUnlock()
+	if len(ProxyHistory) > 0 {
+		localUtils.Logger(fmt.Sprintf("[DEBUG] GetProxyHistory: Returning %d entries", len(ProxyHistory)), 3)
+	}
+	return ProxyHistory
+}
+
+func ClearProxyHistory() {
+	historyMu.Lock()
+	defer historyMu.Unlock()
+	ProxyHistory = []ProxyEntry{}
+}
+
+func RemoveProxyEntry(id string) {
+	historyMu.Lock()
+	defer historyMu.Unlock()
+	newH := []ProxyEntry{}
+	for _, e := range ProxyHistory {
+		if e.SessionID != id {
+			newH = append(newH, e)
+		}
+	}
+	ProxyHistory = newH
+}
+
+func GetSessions() []string {
+	base := os.ExpandEnv("$HOME/.autoscout/sessions")
+	os.MkdirAll(base, 0755)
+	files, err := os.ReadDir(base)
+	if err != nil {
+		return []string{}
+	}
+	var sessions []string
+	for _, f := range files {
+		if f.IsDir() {
+			sessions = append(sessions, f.Name())
+		}
+	}
+	return sessions
+}
+
+func SetSession(name string) {
+	mu.Lock()
+	CurrentSession = name
+	mu.Unlock()
+	
+	// Load history index if it exists
+	historyPath := filepath.Join(os.ExpandEnv("$HOME/.autoscout/sessions"), name, "history.json")
+	data, err := os.ReadFile(historyPath)
+	if err == nil {
+		var h []ProxyEntry
+		if err := json.Unmarshal(data, &h); err == nil {
+			historyMu.Lock()
+			ProxyHistory = h
+			historyMu.Unlock()
+		}
+	} else {
+		ClearProxyHistory()
+	}
+	localUtils.Logger(fmt.Sprintf("Session set to: %s", name), 1)
+}
+
+func saveHistoryIndex() {
+	mu.Lock()
+	session := CurrentSession
+	mu.Unlock()
+	if session == "" { return }
+
+	historyMu.RLock()
+	data, _ := json.MarshalIndent(ProxyHistory, "", "  ")
+	historyMu.RUnlock()
+
+	dir := filepath.Join(os.ExpandEnv("$HOME/.autoscout/sessions"), session)
+	os.MkdirAll(dir, 0755)
+	os.WriteFile(filepath.Join(dir, "history.json"), data, 0644)
+}
 
 func shouldAnalyze(method, url string) bool {
 	cacheMu.Lock()
@@ -210,6 +303,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	mu.Lock()
 	RequestsIntercepted++
+	session := CurrentSession
 	mu.Unlock()
 
 	if r.Method != http.MethodPost {
@@ -233,6 +327,23 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 	decodedBody, _ := base64.StdEncoding.DecodeString(req.Body)
 	localUtils.Logger(fmt.Sprintf("[Burp -> %s] %s %s (%d bytes)", req.Tool, req.Method, req.URL, len(decodedBody)), 1)
 
+	// Record in Proxy History
+	id := time.Now().Format("20060102-150405.000")
+	entry := ProxyEntry{
+		SessionID: id,
+		Method:    req.Method,
+		URL:       req.URL,
+		Status:    "REQ",
+		Tool:      req.Tool,
+		Timestamp: time.Now(),
+	}
+	historyMu.Lock()
+	ProxyHistory = append(ProxyHistory, entry)
+	historyMu.Unlock()
+	
+	saveData(id, req.Body, "", session)
+	saveHistoryIndex()
+
 	// Auto-add domain to targets
 	go func() {
 		u, err := url.Parse(req.URL)
@@ -244,53 +355,17 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 	// Send to AI Orchestrator
 	if WorkQueue != nil && shouldAnalyze(req.Method, req.URL) {
 		WorkQueue <- req
-	} else {
-		localUtils.Logger(fmt.Sprintf("[AI] Skipping redundant analysis for %s", req.URL), 1)
 	}
 
 	// Apply AI Rewrite if exists
 	if modifiedBody, ok := checkRewrite(req.URL); ok {
-		localUtils.Logger("[AI] Applying active rewrite rule for this target", 1)
-		AddAnalysis("AI: Applied active rewrite rule to request")
 		resp := BurpModified{Modified: true, Body: modifiedBody}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
 		return
 	}
 
-	// --- AI Heuristic Routing ---
-	if !isStaticAsset(req.URL) {
-		AddAnalysis(fmt.Sprintf("[%s] REQ: %s %s", req.Tool, req.Method, req.URL))
-
-		// Check for parameters (Potential SQLi/XSS/Fuzzing)
-		if strings.Contains(req.URL, "?") || len(decodedBody) > 0 {
-			delegateToAgent("ParameterFuzzer", req.URL)
-		}
-
-		// Check for JSON/API (Potential IDOR/BOLA)
-		if strings.Contains(strings.ToLower(req.URL), "/api/") {
-			delegateToAgent("APIAnalyzer", req.URL)
-		}
-
-		// DEMO: Specific keyword modification
-		if strings.Contains(strings.ToLower(string(decodedBody)), "fuzz-me") {
-			localUtils.Logger("[AI] Detected 'fuzz-me' keyword. Modifying request...", 1)
-			fuzzed := strings.ReplaceAll(string(decodedBody), "fuzz-me", "AUTOSCOUT-FUZZED")
-			req.Body = base64.StdEncoding.EncodeToString([]byte(fuzzed))
-			AddAnalysis("AI: Modified request body (keyword 'fuzz-me' detected)")
-
-			resp := BurpModified{Modified: true, Body: req.Body}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
-			return
-		}
-	}
-
-	resp := BurpModified{
-		Modified: false,
-		Body:     req.Body,
-	}
-
+	resp := BurpModified{Modified: false, Body: req.Body}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
@@ -298,6 +373,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 func handleResponse(w http.ResponseWriter, r *http.Request) {
 	mu.Lock()
 	ResponsesIntercepted++
+	session := CurrentSession
 	mu.Unlock()
 
 	if r.Method != http.MethodPost {
@@ -317,100 +393,108 @@ func handleResponse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	decodedBody, _ := base64.StdEncoding.DecodeString(resp.Body)
-	localUtils.Logger(fmt.Sprintf("[Burp -> %s] Response Status %d (%d bytes)", resp.Tool, resp.Status, len(decodedBody)), 1)
-
-	// --- AI Heuristic Routing ---
-	if resp.Status == 200 && len(decodedBody) > 0 {
-		AddAnalysis(fmt.Sprintf("[%s] RES: Status %d (%d bytes)", resp.Tool, resp.Status, len(decodedBody)))
-
-		// Check for sensitive info (PII/Secrets)
-		bodyStr := string(decodedBody)
-		if strings.Contains(bodyStr, "AWS_ACCESS_KEY") || strings.Contains(bodyStr, "API_KEY") || strings.Contains(bodyStr, "secret") {
-			delegateToAgent("InfoLeakScanner", "Check logs for details")
-		}
-
-		if strings.Contains(strings.ToLower(bodyStr), "admin") {
-			AddAnalysis("AI ALERT: 'admin' keyword detected in response body!")
+	// Update existing REQ entry with status if found (approximate)
+	historyMu.Lock()
+	for i := len(ProxyHistory) - 1; i >= 0; i-- {
+		if ProxyHistory[i].Status == "REQ" && ProxyHistory[i].Tool == resp.Tool {
+			ProxyHistory[i].Status = fmt.Sprintf("%d", resp.Status)
+			saveData(ProxyHistory[i].SessionID, "", resp.Body, session)
+			break
 		}
 	}
+	historyMu.Unlock()
+	saveHistoryIndex()
 
-	modResp := BurpModified{
-		Modified: false,
-		Body:     resp.Body,
-	}
-
+	modResp := BurpModified{Modified: false, Body: resp.Body}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(modResp)
 }
 
 func handleManual(w http.ResponseWriter, r *http.Request) {
+	localUtils.Logger(fmt.Sprintf("[DEBUG] handleManual hit: %s %s", r.Method, r.URL.Path), 3)
 	if r.Method != http.MethodPost {
+		localUtils.Logger("[DEBUG] handleManual: Method not allowed", 3)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		localUtils.Logger(fmt.Sprintf("[DEBUG] handleManual: Failed to read body: %v", err), 2)
 		http.Error(w, "Failed to read body", http.StatusInternalServerError)
 		return
 	}
-	localUtils.Logger(fmt.Sprintf("[DEBUG] Raw Manual JSON: %s", string(body)), 3)
 
 	var req BurpManualRequest
 	if err := json.Unmarshal(body, &req); err != nil {
+		localUtils.Logger(fmt.Sprintf("[DEBUG] handleManual: Invalid JSON: %v. Body: %s", err, string(body)), 2)
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
 
-	localUtils.Logger(fmt.Sprintf("[Burp -> MANUAL] High-Priority Analysis for %s", req.URL), 1)
-	AddAnalysis("CRITICAL: Received Manual Investigation Task!")
-	AddAnalysis(fmt.Sprintf("TARGET: %s %s", req.Method, req.URL))
+	localUtils.Logger(fmt.Sprintf("[Burp -> MANUAL] Forwarded %s %s", req.Method, req.URL), 1)
 
-	// Save session to /tmp/autoscout
-	sessionID := time.Now().Format("20060102-150405")
-	saveManualSession(sessionID, req)
+	mu.Lock()
+	session := CurrentSession
+	mu.Unlock()
 
-	// Update urls table with session_id
-	go func() {
-		database, err := db.OpenDatabase()
-		if err == nil {
-			defer database.Close()
-			u, _ := url.Parse(req.URL)
-			host := u.Hostname()
-			db.AddUrl(database, host, "", req.URL, host, u.Scheme, "", "", "", "", u.Port(), fmt.Sprintf("%d", req.Status), sessionID)
-		}
-	}()
-
-	// Send to Orchestrator
-	if WorkQueue != nil {
-		decodedRawReq, _ := base64.StdEncoding.DecodeString(req.RawRequest)
-		WorkQueue <- BurpRequest{
-			URL:            req.URL,
-			Method:         req.Method,
-			Tool:           req.Tool,
-			Headers:        req.Headers,
-			Body:           base64.StdEncoding.EncodeToString(decodedRawReq), // Pass raw request as context
-			ResponseStatus: req.Status,
-			ResponseBody:   req.RawResponse,
-		}
-	}
-
+	id := time.Now().Format("20060102-150405.000")
+	statusStr := "REQ"
 	if req.Status > 0 {
-		AddAnalysis(fmt.Sprintf("STATUS: %d", req.Status))
+		statusStr = fmt.Sprintf("%d", req.Status)
 	}
 
-	delegateToAgent("DeepScanner", req.URL)
+	entry := ProxyEntry{
+		SessionID: id,
+		Method:    req.Method,
+		URL:       req.URL,
+		Status:    statusStr,
+		Tool:      req.Tool,
+		Timestamp: time.Now(),
+	}
+	historyMu.Lock()
+	ProxyHistory = append(ProxyHistory, entry)
+	historyMu.Unlock()
+
+	go func() {
+		saveData(id, req.RawRequest, req.RawResponse, session)
+		saveHistoryIndex()
+	}()
 
 	w.WriteHeader(http.StatusOK)
 }
 
-func saveManualSession(id string, req BurpManualRequest) {
-	dir := "/tmp/autoscout"
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		localUtils.Logger(fmt.Sprintf("Failed to create session dir: %v", err), 2)
-		return
+func saveData(id, reqB64, resB64, session string) {
+	var dir string
+	if session != "" {
+		dir = filepath.Join(os.ExpandEnv("$HOME/.autoscout/sessions"), session)
+	} else {
+		dir = "/tmp/autoscout"
 	}
+	os.MkdirAll(dir, 0755)
+
+	if reqB64 != "" {
+		reqData, _ := base64.StdEncoding.DecodeString(reqB64)
+		os.WriteFile(filepath.Join(dir, id+".request"), reqData, 0644)
+	}
+	if resB64 != "" {
+		resData, _ := base64.StdEncoding.DecodeString(resB64)
+		os.WriteFile(filepath.Join(dir, id+".response"), resData, 0644)
+	}
+}
+
+func saveManualSession(id string, req BurpManualRequest) {
+	mu.Lock()
+	session := CurrentSession
+	mu.Unlock()
+
+	var dir string
+	if session != "" {
+		dir = filepath.Join(os.ExpandEnv("$HOME/.autoscout/sessions"), session)
+	} else {
+		dir = "/tmp/autoscout"
+	}
+	os.MkdirAll(dir, 0755)
 
 	// Save Raw Request
 	reqPath := filepath.Join(dir, id+".request")

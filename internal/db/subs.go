@@ -53,8 +53,6 @@ func SubdomainEnum(target string, rateLimit string) error {
 }
 
 func GetSubsFromTable(db *sql.DB, domain string) ([]string, error) {
-	localUtils.Logger(fmt.Sprintf("Getting subdomains for domain: %v", domain), 1)
-
 	selectStmt, err := db.Prepare("SELECT subdomain FROM subdomain WHERE parent_target = ?")
 	if err != nil {
 		return nil, err
@@ -81,5 +79,10 @@ func GetSubsFromTable(db *sql.DB, domain string) ([]string, error) {
 // AddSubs now accepts a Transaction, not the whole DB
 func AddSubs(tx *sql.Tx, url string, domain string) error {
 	_, err := tx.Exec("INSERT INTO subdomain (subdomain,parent_target) VALUES (?,?)", url, domain)
+	return err
+}
+
+func AddSubsManual(db *sql.DB, url string, domain string) error {
+	_, err := db.Exec("INSERT OR IGNORE INTO subdomain (subdomain,parent_target) VALUES (?,?)", url, domain)
 	return err
 }

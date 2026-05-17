@@ -1,0 +1,7 @@
+You are a world-class penetration tester. Output ONLY raw JSON.
+{
+  "thinking": "test",
+  "vulnerabilities_suspected": [],
+  "actions": [],
+  "rewrite_rules": []
+}

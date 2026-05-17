@@ -47,31 +47,42 @@ func (m *analysisModel) rebuildViewport() {
 	}
 
 	for _, entry := range m.rawEntries {
-		style := lipgloss.NewStyle()
+		severity := " INFO "
+		style := lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+		
+		cleanEntry := entry
 		if strings.Contains(entry, "ERRO") || strings.Contains(entry, "CRITICAL") {
+			severity = " ERRO "
 			style = style.Foreground(lipgloss.Color("1")).Bold(true)
 		} else if strings.Contains(entry, "ALER") || strings.Contains(entry, "AI ALERT") {
-			style = style.Foreground(lipgloss.Color("3"))
-		} else if strings.Contains(entry, "INFO") {
-			style = style.Foreground(lipgloss.Color("6"))
-		} else if strings.Contains(entry, "[AI Fleet]") {
-			style = style.Foreground(lipgloss.Color("6")).Italic(true)
+			severity = " ALER "
+			style = style.Foreground(lipgloss.Color("3")).Bold(true)
 		} else if strings.HasPrefix(entry, "AI THINKING:") {
-			style = style.Foreground(lipgloss.Color("244")).Italic(true)
+			severity = " AI   "
+			style = style.Foreground(lipgloss.Color("5")).Italic(true)
+			cleanEntry = strings.TrimPrefix(entry, "AI THINKING:")
 		} else if strings.HasPrefix(entry, "REQ:") {
+			severity = " NET  "
 			style = style.Foreground(lipgloss.Color("2"))
 		}
 
+		sevStyle := lipgloss.NewStyle().
+			Background(style.GetForeground()).
+			Foreground(lipgloss.Color("#FFFFFF")).
+			Bold(true).
+			Width(6).
+			Align(lipgloss.Center)
+
 		var processed string
 		if m.wrap {
-			style = style.Width(maxWidth)
-			processed = style.Render(entry)
+			style = style.Width(maxWidth - 8)
+			processed = lipgloss.JoinHorizontal(lipgloss.Top, sevStyle.Render(severity), " ", style.Render(cleanEntry))
 		} else {
-			display := entry
-			if len(display) > maxWidth {
-				display = display[:maxWidth-3] + "..."
+			display := cleanEntry
+			if len(display) > maxWidth-8 {
+				display = display[:maxWidth-11] + "..."
 			}
-			processed = style.Render(display)
+			processed = lipgloss.JoinHorizontal(lipgloss.Center, sevStyle.Render(severity), " ", style.Render(display))
 		}
 		styledEntries = append(styledEntries, processed)
 	}
@@ -116,7 +127,6 @@ func (m analysisModel) Update(msg tea.Msg) (analysisModel, tea.Cmd) {
 }
 
 func (m analysisModel) View() string {
-	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6")).Underline(true).PaddingLeft(1)
 	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).PaddingLeft(1)
 
 	vpHeight := m.height - 2
@@ -132,8 +142,7 @@ func (m analysisModel) View() string {
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left,
-		titleStyle.Render("INTERCEPTED TRAFFIC ANALYSIS"),
 		m.viewport.View(),
-		helpStyle.Render(fmt.Sprintf(" [c] Clear Feed   [w] Wrap: %s   [up/down] Scroll", wrapText)),
+		helpStyle.Render(fmt.Sprintf(" [c] Clear   [w] Wrap: %s   [j/k] Scroll   [?] Help", wrapText)),
 	)
 }

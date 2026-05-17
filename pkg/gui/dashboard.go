@@ -62,6 +62,7 @@ func NewDashboardModel(w int, h int, port string, workQueue chan burp.BurpReques
 		logPath:     logPath,
 		ready:       true,
 		theme:       ModernTheme,
+		app_status:  scheduler.IsRunning(),
 		burp_status: burp.IsRunning(),
 		burp_port:   port,
 		workQueue:   workQueue,
@@ -100,8 +101,8 @@ func (m dashboardModel) Update(msg tea.Msg) (dashboardModel, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.dialog.width = msg.Width
 		m.dialog.height = msg.Height
-		m.viewport.Width = msg.Width - 2 // Adjust for feedContainer borders
 		m.updateViewportHeight()
+		m.viewport.Width = m.dialog.width - 6
 
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -133,6 +134,7 @@ func (m dashboardModel) Update(msg tea.Msg) (dashboardModel, tea.Cmd) {
 		if s, err := db.GetStats(); err == nil {
 			m.stats = s
 		}
+		m.app_status = scheduler.IsRunning()
 		m.burp_status = burp.IsRunning()
 		m.burp_reqs, m.burp_resps, m.burp_queue = burp.GetStats()
 		
@@ -165,8 +167,8 @@ func (m dashboardModel) Update(msg tea.Msg) (dashboardModel, tea.Cmd) {
 }
 
 func (m *dashboardModel) updateViewportHeight() {
-	// Math: topRow (8) + feedHeader (2) + feedContainer border (2) + help (1) = 13 lines total overhead
-	vpHeight := m.dialog.height - 13
+	// Math: topRow (10) + spacing(1) + feedTitle(1) + feedContainer border (2) + help (1) = 15 lines total overhead
+	vpHeight := m.dialog.height - 15
 	if vpHeight < 2 {
 		vpHeight = 2
 	}
@@ -186,163 +188,119 @@ func (m dashboardModel) View(zm *zone.Manager) string {
 		return "Initializing Dashboard..."
 	}
 
-	// 1. Calculate absolute base dimensions
-	// rightPanelTotalWidth is the space for the active jobs card (35% of total)
-	rightPanelTotalWidth := int(float64(m.dialog.width) * 0.35)
-	if rightPanelTotalWidth < 30 {
-		rightPanelTotalWidth = 30
-	}
-	// leftPanelTotalWidth is the remaining space for Services + Stats
-	leftPanelTotalWidth := m.dialog.width - rightPanelTotalWidth
+	// 1. Precise Math
+	w := m.dialog.width
+	
+	col1W := int(float64(w) * 0.33)
+	col2W := int(float64(w) * 0.33)
+	col3W := w - col1W - col2W
 
-	// 2. Calculate card widths (subtracting 2 for borders)
-	controlsTotalWidth := leftPanelTotalWidth / 2
-	statsTotalWidth := leftPanelTotalWidth - controlsTotalWidth
-
-	controlsWidth := controlsTotalWidth - 2
-	statsWidth := statsTotalWidth - 2
-	jobsWidth := rightPanelTotalWidth - 2
-
-	// Safety clamping
-	if controlsWidth < 4 { controlsWidth = 4 }
-	if statsWidth < 4 { statsWidth = 4 }
-	if jobsWidth < 4 { jobsWidth = 4 }
+	topRowH := 8
 
 	accent := m.theme.Accent
-	headerStyle := lipgloss.NewStyle().Foreground(accent).Bold(true).Underline(true)
+	headerStyle := lipgloss.NewStyle().Foreground(accent).Bold(true).Underline(true).PaddingBottom(1)
 	cardStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
+		Border(lipgloss.NormalBorder()).
 		BorderForeground(m.theme.BorderColor).
 		Padding(0, 1)
 
-	topRowHeight := 8 // Total height with borders
-
 	// --- 1. Service Controls ---
-	statusText := "OFFLINE"
-	statusColor := lipgloss.Color("1")
-	if m.app_status {
-		statusText = "RUNNING"
-		statusColor = lipgloss.Color("2")
+	renderStatus := func(active bool) string {
+		if active {
+			return lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true).Render(" ACTIVE ")
+		}
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true).Render("OFFLINE ")
 	}
 
-	burpStatusText := "OFFLINE"
-	burpStatusColor := lipgloss.Color("1")
-	if m.burp_status {
-		burpStatusText = "ACTIVE "
-		burpStatusColor = lipgloss.Color("2")
+	renderBtn := func(label string, active bool, markID string) string {
+		text := " START "
+		color := accent
+		if active {
+			text = " STOP  "
+			color = lipgloss.Color("1")
+		}
+		style := lipgloss.NewStyle().Background(color).Foreground(lipgloss.Color("#FFFFFF")).Padding(0, 1).Bold(true)
+		return zm.Mark(markID, style.Render(text))
 	}
 
-	startBtnText := " START "
-	if m.app_status {
-		startBtnText = " STOP  "
-	}
-	startBtnStyle := lipgloss.NewStyle().Background(m.theme.Accent).Foreground(lipgloss.Color("#FFFFFF")).Padding(0, 1).Bold(true)
-	startBtn := zm.Mark(m.dialog.id+"ToggleStart", startBtnStyle.Render(startBtnText))
-
-	burpBtnText := " START "
-	if m.burp_status {
-		burpBtnText = " STOP  "
-	}
-	burpBtnStyle := lipgloss.NewStyle().Background(lipgloss.Color("6")).Foreground(lipgloss.Color("#FFFFFF")).Padding(0, 1).Bold(true)
-	burpBtn := zm.Mark(m.dialog.id+"ToggleBurp", burpBtnStyle.Render(burpBtnText))
-
-	controls := cardStyle.Width(controlsWidth).Height(topRowHeight - 2).Render(
+	controls := cardStyle.Width(col1W - 2).Height(topRowH - 2).Render(
 		lipgloss.JoinVertical(lipgloss.Left,
-			headerStyle.Render("SERVICES"),
+			headerStyle.Render("SYSTEM SERVICES"),
+			fmt.Sprintf("Scanner: %s", renderStatus(m.app_status)),
+			renderBtn("START", m.app_status, m.dialog.id+"ToggleStart"),
 			"",
-			fmt.Sprintf("Scanner: %s", lipgloss.NewStyle().Foreground(statusColor).Bold(true).Render(statusText)),
-			startBtn,
-			fmt.Sprintf("Burp:    %s", lipgloss.NewStyle().Foreground(burpStatusColor).Bold(true).Render(burpStatusText)),
-			burpBtn,
+			fmt.Sprintf("Burp API: %s", renderStatus(m.burp_status)),
+			renderBtn("START", m.burp_status, m.dialog.id+"ToggleBurp"),
 		),
 	)
 
 	// --- 2. Stats ---
-	stats := cardStyle.Width(statsWidth).Height(topRowHeight - 2).Render(
+	statLabel := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	statVal := lipgloss.NewStyle().Foreground(m.theme.Highlight).Bold(true)
+	
+	renderStat := func(label string, val int) string {
+		return fmt.Sprintf("%s %s", statLabel.Render(fmt.Sprintf("%-10s", label)), statVal.Render(fmt.Sprintf("%d", val)))
+	}
+
+	stats := cardStyle.Width(col2W - 2).Height(topRowH - 2).Render(
 		lipgloss.JoinVertical(lipgloss.Left,
-			headerStyle.Render("STATISTICS"),
-			"",
-			fmt.Sprintf("Targets: %d", m.stats.Targets),
-			fmt.Sprintf("Subs:    %d", m.stats.Subs),
-			fmt.Sprintf("Reqs:    %d", m.burp_reqs),
-			fmt.Sprintf("Resps:   %d", m.burp_resps),
+			headerStyle.Render("LIVE STATISTICS"),
+			renderStat("Targets", m.stats.Targets),
+			renderStat("Subdomains", m.stats.Subs),
+			renderStat("Requests", m.burp_reqs),
+			renderStat("Responses", m.burp_resps),
 		),
 	)
 
 	// --- 3. Active Jobs ---
 	var jobsView string
 	if len(m.activeJobs) == 0 {
-		jobsView = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true).Render("\n\n  No active tasks...")
+		jobsView = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true).Render("\n  ( •_•)\n  No active tasks...")
 	} else {
 		var rows []string
-		maxJobs := 4
-		for i := 0; i < len(m.activeJobs) && len(rows) < maxJobs; i++ {
+		for i := 0; i < len(m.activeJobs) && i < 4; i++ {
 			job := m.activeJobs[i]
-			cursor := "  "
-			style := lipgloss.NewStyle()
+			style := lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
 			if i == m.selectedJob {
-				cursor = "> "
 				style = style.Foreground(m.theme.Accent).Bold(true)
 			}
-			elapsed := time.Since(job.StartTime).Round(time.Second)
-			row := fmt.Sprintf("%s%-8s | %s (%s)", cursor, job.Tool, job.ID, elapsed)
+			row := fmt.Sprintf("• %-8s [%s]", job.Tool, job.ID[:min(6, len(job.ID))])
 			if job.IsKilling {
-				style = style.Foreground(lipgloss.Color("1")).Bold(true)
-				row = fmt.Sprintf("%s%-8s | %s [KILLING...]", cursor, job.Tool, job.ID)
-			}
-			// Truncate to fit jobsWidth
-			maxLen := jobsWidth
-			if lipgloss.Width(row) > maxLen {
-				row = row[:maxLen-3] + "..."
+				style = style.Foreground(lipgloss.Color("1"))
+				row += " [!]"
 			}
 			rows = append(rows, style.Render(row))
 		}
-		jobsView = "\n" + strings.Join(rows, "\n")
+		jobsView = strings.Join(rows, "\n")
 	}
 
-	activeJobsCard := cardStyle.Width(jobsWidth).Height(topRowHeight - 2).Render(
+	activeJobsCard := cardStyle.Width(col3W - 2).Height(topRowH - 2).Render(
 		lipgloss.JoinVertical(lipgloss.Left,
-			headerStyle.Render(fmt.Sprintf("ACTIVE TASKS (%d)", len(m.activeJobs))),
+			headerStyle.Render(fmt.Sprintf("ACTIVE JOBS (%d)", len(m.activeJobs))),
 			jobsView,
 		),
 	)
 
-	topRow := lipgloss.JoinHorizontal(lipgloss.Top,
-		controls,
-		stats,
-		activeJobsCard,
-	)
+	topRow := lipgloss.JoinHorizontal(lipgloss.Top, controls, stats, activeJobsCard)
 
+	// --- 4. System Feed ---
 	m.updateViewportHeight()
-
-	feedHeader := headerStyle.MarginTop(1).Render(" SYSTEM FEED ")
-
-	feedWidth := m.dialog.width - 2
-	if feedWidth < 10 { feedWidth = 10 }
-
+	
 	feedContainer := lipgloss.NewStyle().
-		Border(lipgloss.ThickBorder()).
+		Border(lipgloss.NormalBorder()).
 		BorderForeground(m.theme.BorderColor).
-		Width(feedWidth).
+		Width(w - 2).
 		Height(m.viewport.Height).
 		Render(m.viewport.View())
 
-	help := lipgloss.NewStyle().
-		Foreground(m.theme.InactiveTabFG).
-		Height(1).
-		MaxHeight(1).
-		Render(" [s] Scanner  [b] Burp API  [x] Kill Task  [↑/↓] Select  [q] Exit")
-
 	return lipgloss.JoinVertical(lipgloss.Left,
 		topRow,
-		feedHeader,
 		feedContainer,
-		help,
 	)
 }
 
 func tickEvery() tea.Cmd {
-	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
+	return tea.Tick(250*time.Millisecond, func(t time.Time) tea.Msg {
 		return TickMsg(t)
 	})
 }

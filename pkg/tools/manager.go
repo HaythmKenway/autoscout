@@ -1,14 +1,164 @@
 package tools
 
 import (
+	"encoding/json"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/HaythmKenway/autoscout/pkg/localUtils"
 )
+
+type ToolParameter struct {
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Description string `json:"description"`
+	Flag        string `json:"flag"`
+	Default     string `json:"default,omitempty"`
+}
+
+type RateLimitConfig struct {
+	Flag      string           `json:"flag"`
+	Unit      string           `json:"unit"` // "req_s", "ms", "s", "concurrency"
+	Calculate func(int) string `json:"-"`
+}
+
+type ToolCapability struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	HelpText    string          `json:"help_text"`
+	Parameters  []ToolParameter `json:"parameters"`
+	RateLimit   RateLimitConfig `json:"rate_limit"`
+}
+
+var ToolRegistry = make(map[string]ToolCapability)
+
+func init() {
+	registerTools()
+}
+
+func registerTools() {
+	// 1. DalFox
+	ToolRegistry["dalfox"] = ToolCapability{
+		Name:        "DalFox",
+		Description: "Parameter Analysis and XSS Scanning tool.",
+		RateLimit: RateLimitConfig{
+			Flag: "--delay",
+			Unit: "ms",
+			Calculate: func(r int) string {
+				if r <= 0 { r = 5 }
+				return strconv.Itoa(1000 / r)
+			},
+		},
+	}
+
+	// 2. SQLMap
+	ToolRegistry["sqlmap"] = ToolCapability{
+		Name:        "SQLMap",
+		Description: "Automatic SQL injection tool.",
+		RateLimit: RateLimitConfig{
+			Flag: "--delay",
+			Unit: "s",
+			Calculate: func(r int) string {
+				if r <= 0 { r = 5 }
+				return fmt.Sprintf("%.2f", 1.0/float64(r))
+			},
+		},
+	}
+
+	// 3. Nuclei
+	ToolRegistry["nuclei"] = ToolCapability{
+		Name:        "Nuclei",
+		Description: "Template-based scanner.",
+		RateLimit: RateLimitConfig{
+			Flag: "-rl",
+			Unit: "req_s",
+			Calculate: func(r int) string {
+				if r <= 0 { r = 5 }
+				return strconv.Itoa(r)
+			},
+		},
+	}
+
+	// 4. FFUF
+	ToolRegistry["ffuf"] = ToolCapability{
+		Name:        "FFUF",
+		Description: "Fast web fuzzer.",
+		RateLimit: RateLimitConfig{
+			Flag: "-rate",
+			Unit: "req_s",
+			Calculate: func(r int) string {
+				if r <= 0 { r = 5 }
+				return strconv.Itoa(r)
+			},
+		},
+	}
+
+	// 5. Katana
+	ToolRegistry["katana"] = ToolCapability{
+		Name:        "Katana",
+		Description: "Crawling framework.",
+		RateLimit: RateLimitConfig{
+			Flag: "-rl",
+			Unit: "req_s",
+			Calculate: func(r int) string {
+				if r <= 0 { r = 5 }
+				return strconv.Itoa(r)
+			},
+		},
+	}
+
+	// 6. Arjun
+	ToolRegistry["arjun"] = ToolCapability{
+		Name:        "Arjun",
+		Description: "Parameter discovery suite.",
+		RateLimit: RateLimitConfig{
+			Flag: "-d",
+			Unit: "s",
+			Calculate: func(r int) string {
+				if r <= 0 { r = 5 }
+				return fmt.Sprintf("%.2f", 1.0/float64(r))
+			},
+		},
+	}
+
+	// 7. HTTPX
+	ToolRegistry["httpx"] = ToolCapability{
+		Name:        "HTTPX",
+		Description: "HTTP toolkit.",
+		RateLimit: RateLimitConfig{
+			Flag: "-rl",
+			Unit: "req_s",
+			Calculate: func(r int) string {
+				if r <= 0 { r = 5 }
+				return strconv.Itoa(r)
+			},
+		},
+	}
+
+	// 8. Subfinder
+	ToolRegistry["subfinder"] = ToolCapability{
+		Name:        "Subfinder",
+		Description: "Subdomain discovery.",
+		RateLimit: RateLimitConfig{
+			Flag: "-t",
+			Unit: "threads",
+			Calculate: func(r int) string {
+				return "10"
+			},
+		},
+	}
+}
+
+func (tc ToolCapability) TranslateRateLimit(rate int) (string, string) {
+	if tc.RateLimit.Flag == "" {
+		return "", ""
+	}
+	return tc.RateLimit.Flag, tc.RateLimit.Calculate(rate)
+}
 
 type Job struct {
 	ID        string
@@ -25,26 +175,28 @@ type JobManager struct {
 	sem  chan struct{}
 }
 
+const (
+	FuncSubfinder = "Subfinder"
+	FuncHTTPX     = "HTTPX"
+	FuncSpider    = "Spider"
+)
+
 var DefaultJobManager = &JobManager{
 	jobs: make(map[string]*Job),
-	sem:  make(chan struct{}, 5), // Limit to 5 concurrent tools
+	sem:  make(chan struct{}, 10), 
 }
 
 func (m *JobManager) Register(tool, target string, cmd *exec.Cmd) string {
-	// Wait for slot in semaphore
 	m.sem <- struct{}{}
-
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Ensure the command starts in its own process group
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	} else {
 		cmd.SysProcAttr.Setpgid = true
 	}
 
-	// Use a shorter, more readable ID for UI
 	id := fmt.Sprintf("%s-%d", tool, time.Now().Unix()%10000)
 	job := &Job{
 		ID:        id,
@@ -61,8 +213,6 @@ func (m *JobManager) Unregister(id string) {
 	m.mu.Lock()
 	delete(m.jobs, id)
 	m.mu.Unlock()
-
-	// Release slot in semaphore
 	<-m.sem
 }
 
@@ -80,25 +230,27 @@ func (m *JobManager) StopJob(id string) error {
 
 	if job.Cmd != nil && job.Cmd.Process != nil {
 		pid := job.Cmd.Process.Pid
-		// 1. Try to kill the entire process group (negative PID)
 		err := syscall.Kill(-pid, syscall.SIGKILL)
 		if err == nil {
-			localUtils.Logger(fmt.Sprintf("[JobManager] Killed process group for job %s (PID: %d)", id, pid), 1)
+			localUtils.Logger(fmt.Sprintf("[JobManager] Killed process group for job %s", id), 1)
 			return nil
 		}
-
-		// 2. Fallback: Kill the process directly if PGID kill failed
-		localUtils.Logger(fmt.Sprintf("[JobManager] PGID kill failed for job %s: %v. Trying direct PID kill.", id, err), 2)
-		if err := job.Cmd.Process.Kill(); err != nil {
-			localUtils.Logger(fmt.Sprintf("[JobManager] Direct kill failed for job %s: %v", id, err), 2)
-			return err
-		}
-		localUtils.Logger(fmt.Sprintf("[JobManager] Directly killed job %s (PID: %d)", id, pid), 1)
-		return nil
+		return job.Cmd.Process.Kill()
 	}
-	
-	localUtils.Logger(fmt.Sprintf("[JobManager] Job %s has no active process to kill", id), 2)
 	return nil
+}
+
+func (m *JobManager) StopAllJobs() {
+	m.mu.RLock()
+	ids := make([]string, 0, len(m.jobs))
+	for id := range m.jobs {
+		ids = append(ids, id)
+	}
+	m.mu.RUnlock()
+
+	for _, id := range ids {
+		m.StopJob(id)
+	}
 }
 
 func (m *JobManager) ListJobs() []*Job {
@@ -110,4 +262,9 @@ func (m *JobManager) ListJobs() []*Job {
 		jobs = append(jobs, job)
 	}
 	return jobs
+}
+
+func GetToolCapabilitiesJSON() string {
+	data, _ := json.MarshalIndent(ToolRegistry, "", "  ")
+	return string(data)
 }

@@ -52,7 +52,7 @@ func LoadBackend() AIAgent {
 	settingsPath := os.ExpandEnv("$HOME/.config/autoscout/user-config.yaml")
 	data, err := os.ReadFile(settingsPath)
 
-	agentType := "Codex" // Default
+	agentType := "Codex" // Primary default
 	if err == nil {
 		var config struct {
 			Settings struct {
@@ -65,15 +65,12 @@ func LoadBackend() AIAgent {
 		}
 	}
 
-	if agentType == "Codex" {
-		return NewCodexBackend("")
-	}
-
 	if agentType == "Gemini" {
 		return NewGeminiBackend("", "gemini-1.5-flash")
 	}
 
-	// Default to Codex if nothing else matches or is specified
+	// For both "Codex" and "Ollama", we now prioritize the system 'codex' binary
+	// since it is the user's preferred environment.
 	return NewCodexBackend("")
 }
 

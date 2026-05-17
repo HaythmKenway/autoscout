@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/lipgloss"
+	zone "github.com/lrstanley/bubblezone"
 	"gopkg.in/yaml.v3"
 )
 
@@ -43,6 +45,7 @@ type settingsModel struct {
 	
 	width        int
 	height       int
+	theme        Theme
 	discordModel *Discord
 	userSettings *Settings
 	saveMessage  string
@@ -135,6 +138,7 @@ func NewSettingsModel(width int, height int) settingsModel {
 		discordInputs: []textinput.Model{di, pi, ri},
 		width:         width,
 		height:        height,
+		theme:         ModernTheme,
 		discordModel:  discordModel,
 		userSettings:  userSettings,
 	}
@@ -153,7 +157,6 @@ func (m settingsModel) Init() tea.Cmd {
 }
 
 type hideSaveMsg struct{}
-
 func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 	var cmd tea.Cmd
 	var cmds []tea.Cmd
@@ -267,9 +270,9 @@ func (m *settingsModel) save() {
 	localUtils.Logger("Settings persisted to disk", 1)
 }
 
-func (m settingsModel) View() string {
+func (m settingsModel) View(zm *zone.Manager) string {
 	catWidth := 22
-	editorWidth := m.width - catWidth - 2
+	editorWidth := m.width - catWidth
 	if editorWidth < 0 { editorWidth = 0 }
 
 	// Categories List
@@ -279,20 +282,20 @@ func (m settingsModel) View() string {
 		style := lipgloss.NewStyle().Padding(0, 1).MarginBottom(1)
 		if settingsCategory(i) == m.activeCat {
 			if !m.focusEditor {
-				style = style.Background(lipgloss.Color("5")).Foreground(lipgloss.Color("7")).Bold(true)
+				style = style.Background(m.theme.Accent).Foreground(lipgloss.Color("#ffffff")).Bold(true)
 			} else {
-				style = style.Background(lipgloss.Color("8")).Foreground(lipgloss.Color("7"))
+				style = style.Background(lipgloss.Color("237")).Foreground(m.theme.Accent)
 			}
 		} else {
 			style = style.Foreground(lipgloss.Color("240"))
 		}
-		catViews = append(catViews, style.Width(catWidth).Render(cat))
+		catViews = append(catViews, zm.Mark(fmt.Sprintf("set-cat-%d", i), style.Width(catWidth).Render(cat)))
 	}
 	catList := lipgloss.JoinVertical(lipgloss.Left, catViews...)
 
 	// Editor Area
 	var editorContent string
-	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("5")).MarginBottom(1)
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(m.theme.Accent).MarginBottom(1)
 	
 	switch m.activeCat {
 	case CatUI:
@@ -303,10 +306,10 @@ func (m settingsModel) View() string {
 			if i == m.themeCursor {
 				prefix = "[*] "
 				if m.focusEditor {
-					style = style.Foreground(lipgloss.Color("5")).Bold(true)
+					style = style.Foreground(m.theme.Accent).Bold(true)
 				}
 			}
-			opts = append(opts, style.Render(prefix+opt))
+			opts = append(opts, zm.Mark(fmt.Sprintf("set-opt-theme-%d", i), style.Render(prefix+opt)))
 		}
 		editorContent = lipgloss.JoinVertical(lipgloss.Left,
 			titleStyle.Render("SELECT THEME"),
@@ -320,10 +323,10 @@ func (m settingsModel) View() string {
 			if i == m.agentCursor {
 				prefix = "(*) "
 				if m.focusEditor {
-					style = style.Foreground(lipgloss.Color("5")).Bold(true)
+					style = style.Foreground(m.theme.Accent).Bold(true)
 				}
 			}
-			opts = append(opts, style.Render(prefix+opt))
+			opts = append(opts, zm.Mark(fmt.Sprintf("set-opt-agent-%d", i), style.Render(prefix+opt)))
 		}
 		editorContent = lipgloss.JoinVertical(lipgloss.Left,
 			titleStyle.Render("SELECT AI AGENT BACKEND"),
@@ -368,33 +371,20 @@ func (m settingsModel) View() string {
 	}
 
 	editorStyle := lipgloss.NewStyle().
-		Width(editorWidth).
-		Height(m.height - 4).
+		Width(editorWidth - 2).
+		Height(m.height - 2).
 		Padding(0, 1).
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(lipgloss.Color("237"))
 
 	if m.focusEditor {
-		editorStyle = editorStyle.BorderForeground(lipgloss.Color("5"))
+		editorStyle = editorStyle.BorderForeground(m.theme.Accent)
 	}
 
 	editor := editorStyle.Render(editorContent)
 
-	// Save Banner
-	footer := ""
-	if m.saveMessage != "" {
-		footer = lipgloss.NewStyle().
-			Background(lipgloss.Color("2")).
-			Foreground(lipgloss.Color("0")).
-			Bold(true).
-			Padding(0, 2).
-			Render(m.saveMessage)
-	} else {
-		footer = lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(" [Tab] Switch Zone  [Ctrl+S] Save  [Esc] Back")
-	}
-
 	main := lipgloss.JoinHorizontal(lipgloss.Top, catList, editor)
-	return lipgloss.JoinVertical(lipgloss.Left, main, footer)
+	return main
 }
 
 func storetodb(discord *Discord, key string, value string) {

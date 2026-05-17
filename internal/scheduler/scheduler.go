@@ -12,9 +12,8 @@ import (
 	"time"
 
 	"github.com/HaythmKenway/autoscout/internal/db"
-	"github.com/HaythmKenway/autoscout/pkg/httpx"
 	"github.com/HaythmKenway/autoscout/pkg/localUtils"
-	"github.com/HaythmKenway/autoscout/pkg/spider"
+	"github.com/HaythmKenway/autoscout/pkg/tools"
 )
 
 type Task struct {
@@ -49,7 +48,7 @@ var (
 	globalTaskID       int64
 )
 
-// --- Inactivity Monitor (New Feature) ---
+// --- Inactivity Monitor ---
 
 func monitorInactivity(ctx context.Context) {
 	ticker := time.NewTicker(1 * time.Second)
@@ -64,15 +63,12 @@ func monitorInactivity(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			// 1. Check Active Workers
 			CurrentActiveTasks.mu.RLock()
 			busyWorkers := len(CurrentActiveTasks.tasks)
 			CurrentActiveTasks.mu.RUnlock()
 
-			// 2. Check Pending Queue
 			queueSize := len(TaskQueue)
 
-			// 3. Reset or Check Timeout
 			if busyWorkers > 0 || queueSize > 0 {
 				lastActivity = time.Now()
 			} else {
@@ -89,7 +85,6 @@ func monitorInactivity(ctx context.Context) {
 func addToQueue(ctx context.Context) {
 	defer wg.Done()
 
-	// Run immediately on start
 	processBatch(ctx)
 
 	ticker := time.NewTicker(10 * time.Second)
@@ -112,10 +107,9 @@ func processBatch(ctx context.Context) {
 		localUtils.Logger(fmt.Sprintf("Scheduler DB Error: %v", err), 1)
 		return
 	}
+	defer dbConn.Close()
 
 	targets, err := db.GetTargetsFromTable(dbConn, 1)
-	dbConn.Close()
-
 	if err != nil {
 		localUtils.Logger(fmt.Sprintf("Error getting targets: %v", err), 1)
 		return
@@ -162,12 +156,10 @@ func executeJob(ctx context.Context, workerID int) {
 			}
 			localUtils.Logger(fmt.Sprintf("[Worker %d] Processing: %s", workerID, task.Target), 1)
 
-			// Add to Active
 			CurrentActiveTasks.mu.Lock()
 			CurrentActiveTasks.tasks = append(CurrentActiveTasks.tasks, task)
 			CurrentActiveTasks.mu.Unlock()
 
-			// Workflow Logic
 			pathID, err := determinePath(workerDb, task.Target)
 			if err != nil {
 				localUtils.Logger(fmt.Sprintf("[Worker %d] No rule for %s: %v", workerID, task.Target, err), 2)
@@ -177,10 +169,8 @@ func executeJob(ctx context.Context, workerID int) {
 				}
 			}
 
-			// Mark Done
 			db.ScanCompleted(workerDb, task.Target)
 
-			// Remove from Active
 			CurrentActiveTasks.mu.Lock()
 			for i, t := range CurrentActiveTasks.tasks {
 				if t.ID == task.ID {
@@ -282,25 +272,24 @@ func runTool(dbConn *sql.DB, funcName string, targets []string, args string) ([]
 	for _, target := range targets {
 		switch funcName {
 		case FuncSubfinder:
-			db.SubdomainEnum(target, rateLimit)
+			tools.RunSubfinder(target, rateLimit)
 			subs, _ := db.GetSubsFromTable(dbConn, target)
 			results = append(results, subs...)
 
 		case FuncHTTPX:
-			httpx.Httpx(dbConn, target, rateLimit)
-			urls, _ := db.GetDataFromTable(dbConn, target)
-			results = append(results, urls...)
+			tools.RunHTTPX(target, rateLimit)
+			urlsSlice, _ := db.GetDataFromTable(dbConn, target)
+			if len(urlsSlice) > 2 {
+				// urlsSlice[1] is typically the URL
+				results = append(results, urlsSlice[1])
+			}
 
 		case FuncGoSpider:
-			res, err := spider.Spider(target, rateLimit)
-			if err == nil {
-				db.AddSpiderTargets(dbConn, target, res)
-				results = append(results, res...)
-			}
+			tools.RunGoSpider(target, rateLimit)
+			// GoSpider results aren't easily returned for next step in current architecture
 		}
 
-		// Add delay between targets to respect rate limit
-		delay := 200 * time.Millisecond // Default for 5 req/s
+		delay := 200 * time.Millisecond
 		if rl, err := strconv.Atoi(rateLimit); err == nil && rl > 0 {
 			delay = time.Duration(1000/rl) * time.Millisecond
 		}
@@ -311,7 +300,6 @@ func runTool(dbConn *sql.DB, funcName string, targets []string, args string) ([]
 
 // --- Scheduler Control ---
 
-// IsRunning allows the UI to check state without managing it manually
 func IsRunning() bool {
 	schedulerMu.Lock()
 	defer schedulerMu.Unlock()
@@ -331,17 +319,13 @@ func startScheduler() {
 	running = true
 	localUtils.Logger("Started the Scheduler", 1)
 
-	// Start Workers
 	for i := 1; i <= 4; i++ {
 		wg.Add(1)
 		go executeJob(ctx, i)
 	}
 
-	// Start Producer
 	wg.Add(1)
 	go addToQueue(ctx)
-
-	// Start Inactivity Monitor
 	go monitorInactivity(ctx)
 }
 
@@ -358,8 +342,6 @@ func stopScheduler() {
 		cancel()
 	}
 
-	// We don't wait for workers here to avoid blocking the UI thread.
-	// Instead, we just mark as not running immediately.
 	running = false
 	localUtils.Logger("Scheduler stop signal sent", 1)
 }

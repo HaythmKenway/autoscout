@@ -1,0 +1,9 @@
+Respond ONLY with the JSON provided. Do not execute any commands.
+{
+  "thinking": "testing JSON output",
+  "vulnerabilities_suspected": [],
+  "actions": [
+    {"tool": "nuclei", "target": "https://example.com", "params": {"rate_limit": "5"}}
+  ],
+  "rewrite_rules": []
+}

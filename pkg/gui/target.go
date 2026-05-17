@@ -25,7 +25,9 @@ type targetModel struct {
 	domainTable    table.Model
 	urlTable       table.Model
 	input          textinput.Model
+	filterInput    textinput.Model
 	adding         bool
+	filtering      bool
 	width          int
 	height         int
 	theme          Theme
@@ -57,15 +59,22 @@ func NewTargetModel(w, h int, zm *zone.Manager) targetModel {
 
 	ti := textinput.New()
 	ti.Placeholder = "example.com"
-	ti.Focus()
 	ti.CharLimit = 156
 	ti.Width = 30
+
+	fi := textinput.New()
+	fi.Placeholder = "Filter URLs (regex)..."
+	fi.CharLimit = 100
+	fi.Width = 40
+	fi.Prompt = " / "
 
 	m := targetModel{
 		domainTable:  dt,
 		urlTable:     ut,
 		input:        ti,
+		filterInput:  fi,
 		adding:       false,
+		filtering:    false,
 		width:        w,
 		height:       h,
 		theme:        ModernTheme,
@@ -127,6 +136,20 @@ func (m targetModel) Update(msg tea.Msg) (targetModel, tea.Cmd) {
 
 	case tea.MouseMsg:
 		if msg.Action == tea.MouseActionRelease && msg.Button == tea.MouseButtonLeft {
+			if m.zm.Get("target-left").InBounds(msg) {
+				m.activePane = PaneDomains
+				m.domainTable.Focus()
+				m.urlTable.Blur()
+			} else if m.zm.Get("target-mid").InBounds(msg) {
+				m.activePane = PaneURLs
+				m.urlTable.Focus()
+				m.domainTable.Blur()
+			} else if m.zm.Get("target-right").InBounds(msg) {
+				m.activePane = PaneTools
+				m.domainTable.Blur()
+				m.urlTable.Blur()
+			}
+
 			if m.zm.Get("target-ai-btn").InBounds(msg) {
 				selectedURLRow := m.urlTable.SelectedRow()
 				var sid, target string
@@ -166,7 +189,23 @@ func (m targetModel) Update(msg tea.Msg) (targetModel, tea.Cmd) {
 			return m, cmd
 		}
 
+		if m.filtering {
+			switch msg.String() {
+			case "enter", "esc":
+				m.filtering = false
+				m.filterInput.Blur()
+				return m, nil
+			}
+			m.filterInput, cmd = m.filterInput.Update(msg)
+			m.refreshURLs()
+			return m, cmd
+		}
+
 		switch msg.String() {
+		case "/":
+			m.filtering = true
+			m.filterInput.Focus()
+			return m, nil
 		case "tab":
 			m.cyclePane()
 		case "a":
@@ -302,7 +341,18 @@ func (m targetModel) View() string {
 		)
 	}
 
-	// Styles for the panes - using explicit widths and BorderBox logic
+	// Filter Bar
+	var filterBar string
+	if m.filtering || m.filterInput.Value() != "" {
+		fStyle := lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder()).
+			BorderForeground(lipgloss.Color("6")).
+			MarginBottom(1).
+			Width(m.width - 2)
+		filterBar = fStyle.Render(m.filterInput.View())
+	}
+
+	// Styles for the panes
 	paneBase := lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(m.theme.BorderColor).
@@ -312,10 +362,10 @@ func (m targetModel) View() string {
 		BorderForeground(m.theme.Accent)
 
 	// Inner height for tables
-	innerH := m.height - 5
+	innerH := m.height - 4
+	if filterBar != "" { innerH -= 3 }
 	if innerH < 1 { innerH = 1 }
 
-	// Ensure table height matches pane height
 	m.domainTable.SetHeight(innerH)
 	m.urlTable.SetHeight(innerH)
 
@@ -366,17 +416,15 @@ func (m targetModel) View() string {
 
 	// Compose layout
 	content := lipgloss.JoinHorizontal(lipgloss.Top,
-		leftStyle.Render(m.domainTable.View()),
-		middleStyle.Render(m.urlTable.View()),
+		leftStyle.Render(m.zm.Mark("target-left", m.domainTable.View())),
+		middleStyle.Render(m.zm.Mark("target-mid", m.urlTable.View())),
 		rightStyle.Render(rightContent),
 	)
 
-	help := lipgloss.NewStyle().
-		Foreground(m.theme.InactiveTabFG).
-		PaddingLeft(1).
-		Render(" [tab] Cycle Pane   [a] Add   [d] Delete   [enter] Select/Run")
-
-	return lipgloss.JoinVertical(lipgloss.Left, content, help)
+	if filterBar != "" {
+		return lipgloss.JoinVertical(lipgloss.Left, filterBar, content)
+	}
+	return content
 }
 
 func (m *targetModel) refreshTargets() {
@@ -423,10 +471,25 @@ func (m *targetModel) refreshURLs() {
 		return
 	}
 
+	filter := strings.ToLower(m.filterInput.Value())
 	rows := []table.Row{}
 	m.urlToSession = make(map[string]string)
 	for _, u := range urls {
-		rows = append(rows, table.Row{u["url"], u["status"], u["tech"]})
+		if filter != "" && !strings.Contains(strings.ToLower(u["url"]), filter) && !strings.Contains(strings.ToLower(u["tech"]), filter) {
+			continue
+		}
+
+		status := u["status"]
+		sStyle := lipgloss.NewStyle()
+		if strings.HasPrefix(status, "2") {
+			sStyle = sStyle.Foreground(lipgloss.Color("2"))
+		} else if strings.HasPrefix(status, "3") {
+			sStyle = sStyle.Foreground(lipgloss.Color("3"))
+		} else if strings.HasPrefix(status, "4") || strings.HasPrefix(status, "5") {
+			sStyle = sStyle.Foreground(lipgloss.Color("1"))
+		}
+
+		rows = append(rows, table.Row{u["url"], sStyle.Render(status), u["tech"]})
 		if u["session_id"] != "" {
 			m.urlToSession[u["url"]] = u["session_id"]
 		}

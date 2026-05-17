@@ -2,79 +2,34 @@ package subdomain
 
 import (
 	"bytes"
-	"context"
-	"fmt"
-	"io"
-	"log"
-	"os"
+	"os/exec"
 	"sort"
 
 	"github.com/HaythmKenway/autoscout/pkg/localUtils"
-	"github.com/projectdiscovery/gologger"
-	"github.com/projectdiscovery/gologger/levels" // Import levels
-	"github.com/projectdiscovery/subfinder/v2/pkg/runner"
 )
 
-// 1. Create a custom adapter struct
-type logAdapter struct {
-	w io.Writer
-}
-
-// 2. Implement the specific Write method gologger demands
-// It wants Write([]byte, levels.Level), not the standard Write([]byte) (int, error)
-func (l *logAdapter) Write(data []byte, level levels.Level) {
-	l.w.Write(data)
-}
-
 func Subdomain(domain string, rateLimit string) ([]string, error) {
-	// Standardize path using your utility so it matches the rest of the app
-	logPath := localUtils.GetWorkingDirectory() + "/go.log"
-
 	if rateLimit == "" {
 		rateLimit = localUtils.GetRateLimit()
 	}
 
-	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err == nil {
-		defer f.Close()
-		// 3. Use the adapter to wrap the file
-		adapter := &logAdapter{w: f}
-		gologger.DefaultLogger.SetWriter(adapter)
-	} else {
-		// Wrap io.Discard if file fails
-		adapter := &logAdapter{w: io.Discard}
-		gologger.DefaultLogger.SetWriter(adapter)
-	}
+	args := []string{"-d", domain, "-silent", "-nc"}
+	
+	// Subfinder doesn't have a direct rate limit flag, but we use threads
+	args = append(args, "-t", "10")
 
-	localUtils.Logger(fmt.Sprintf("performing subdomain Enumeration for %s (Rate: %s)", domain, rateLimit), 1)
-
-	threads := 10
-	if rateLimit != "" {
-		// Map rateLimit to threads (roughly)
-		threads = 5 // Keep it conservative
-	}
-
-	subfinderOpts := &runner.Options{
-		Threads:            threads,
-		Timeout:            30,
-		MaxEnumerationTime: 10,
-		Silent:             true,
-	}
-
-	log.SetFlags(0)
-
-	subfinder, err := runner.NewRunner(subfinderOpts)
-	if err != nil {
-		return nil, err
-	}
-
+	cmd := exec.Command("subfinder", args...)
+	
 	output := &bytes.Buffer{}
-	if err := subfinder.EnumerateSingleDomainWithCtx(context.Background(), domain, []io.Writer{output}); err != nil {
+	// We'll use a local buffer here for the scheduler, 
+	// but the RunSubfinder wrapper in tools.go will handle the JobManager.
+	cmd.Stdout = output
+	
+	if err := cmd.Run(); err != nil {
 		return nil, err
 	}
 
 	subdomains := parseSubfinderOutput(output.String())
-	localUtils.Logger("subdomain Enumeration for "+domain+" completed", 1)
 	return subdomains, nil
 }
 
