@@ -4,11 +4,11 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/HaythmKenway/autoscout/internal/db"
@@ -16,30 +16,53 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// runWithLogs starts a command and streams its output to the global logger in real-time
+// runWithLogs starts a command and streams its output to the global logger in real-time.
+// stderr is captured separately to avoid contaminating the JSONL stdout parsed by onComplete.
 func runWithLogs(toolName string, target string, cmd *exec.Cmd, onComplete func(string)) {
 	jobID := DefaultJobManager.Register(toolName, target, cmd)
 	defer DefaultJobManager.Unregister(jobID)
 
 	stdout, _ := cmd.StdoutPipe()
 	stderr, _ := cmd.StderrPipe()
-	
+
 	if err := cmd.Start(); err != nil {
-		localUtils.Logger(fmt.Sprintf("[%s] Failed to start: %v", toolName, err), 2)
+		localUtils.Logger(fmt.Sprintf("[%s] Failed to start: %v (is it installed?)", toolName, err), 2)
 		return
 	}
 
+	// Enforce per-tool timeout by killing the process after the deadline.
+	if cap, exists := ToolRegistry[strings.ToLower(toolName)]; exists && cap.Timeout > 0 {
+		go func() {
+			time.Sleep(cap.Timeout)
+			if cmd.Process != nil {
+				localUtils.Logger(fmt.Sprintf("[%s] Timeout (%v) reached, killing process", toolName, cap.Timeout), 2)
+				cmd.Process.Kill()
+			}
+		}()
+	}
+
 	var fullOutput strings.Builder
-	multi := io.MultiReader(stdout, stderr)
-	scanner := bufio.NewScanner(multi)
-	
+
+	// Drain stderr in a separate goroutine so it never contaminates stdout JSONL.
+	var stderrWg sync.WaitGroup
+	stderrWg.Add(1)
+	go func() {
+		defer stderrWg.Done()
+		stderrScanner := bufio.NewScanner(stderr)
+		for stderrScanner.Scan() {
+			localUtils.Logger(fmt.Sprintf("[%s] %s", toolName, stderrScanner.Text()), 3)
+		}
+	}()
+
+	// Stream stdout to logger and accumulate for onComplete.
+	stdoutScanner := bufio.NewScanner(stdout)
 	buf := make([]byte, 0, 64*1024)
-	scanner.Buffer(buf, 1024*1024)
-	
-	for scanner.Scan() {
-		line := scanner.Text()
+	stdoutScanner.Buffer(buf, 1024*1024)
+
+	for stdoutScanner.Scan() {
+		line := stdoutScanner.Text()
 		fullOutput.WriteString(line + "\n")
-		
+
 		displayLine := line
 		if len(displayLine) > 1000 {
 			displayLine = displayLine[:997] + "..."
@@ -47,9 +70,11 @@ func runWithLogs(toolName string, target string, cmd *exec.Cmd, onComplete func(
 		localUtils.Logger(fmt.Sprintf("[%s] %s", toolName, displayLine), 1)
 	}
 
-	if err := scanner.Err(); err != nil {
+	if err := stdoutScanner.Err(); err != nil {
 		localUtils.Logger(fmt.Sprintf("[%s] Scanner error: %v", toolName, err), 2)
 	}
+
+	stderrWg.Wait()
 
 	err := cmd.Wait()
 	if err != nil {

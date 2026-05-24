@@ -52,7 +52,7 @@ func LoadBackend() AIAgent {
 	settingsPath := os.ExpandEnv("$HOME/.config/autoscout/user-config.yaml")
 	data, err := os.ReadFile(settingsPath)
 
-	agentType := "Codex" // Primary default
+	agentType := "ClaudeCode" // Default: uses Claude Code subscription, no API key needed
 	if err == nil {
 		var config struct {
 			Settings struct {
@@ -65,13 +65,18 @@ func LoadBackend() AIAgent {
 		}
 	}
 
-	if agentType == "Gemini" {
+	switch agentType {
+	case "ClaudeCode":
+		return NewClaudeCodeBackend("")
+	case "Claude":
+		return NewClaudeBackend("", "claude-sonnet-4-6")
+	case "Gemini":
 		return NewGeminiBackend("", "gemini-1.5-flash")
+	case "Ollama":
+		return NewOllamaBackend("")
+	default: // "Codex" and legacy values
+		return NewCodexBackend("")
 	}
-
-	// For both "Codex" and "Ollama", we now prioritize the system 'codex' binary
-	// since it is the user's preferred environment.
-	return NewCodexBackend("")
 }
 
 // TruncateBody limits the size of a string to avoid exceeding LLM context windows.

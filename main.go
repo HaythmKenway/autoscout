@@ -16,6 +16,7 @@ import (
 	"github.com/HaythmKenway/autoscout/internal/scheduler"
 	"github.com/HaythmKenway/autoscout/pkg/ai"
 	"github.com/HaythmKenway/autoscout/pkg/burp"
+	"github.com/HaythmKenway/autoscout/pkg/deps"
 	"github.com/HaythmKenway/autoscout/pkg/orchestrator"
 	gui_module "github.com/HaythmKenway/autoscout/pkg/gui"
 	"github.com/HaythmKenway/autoscout/pkg/httpx"
@@ -43,8 +44,11 @@ func main() {
 	sshMode := flag.Bool("ssh", false, "Start sshserver")
 	burpMode := flag.Bool("burp", false, "Start Burp Suite Integration API")
 	burpPort := flag.String("port", "8081", "Port for Burp Integration API")
+	skipDeps := flag.Bool("skip-deps", false, "Skip dependency check and auto-install")
 
 	flag.Parse()
+
+	deps.RunStartupCheck(*skipDeps)
 
 	controller.Init()
 
