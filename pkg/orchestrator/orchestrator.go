@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -107,6 +108,11 @@ func (o *Orchestrator) processRequest(req burp.BurpRequest) {
 	}
 
 	for _, action := range actions {
+		if !tools.IsToolAvailable(action.Tool) {
+			localUtils.Logger(fmt.Sprintf("[%s] Tool '%s' not found in PATH, skipping. Install it to enable this scan.", agentName, action.Tool), 2)
+			continue
+		}
+
 		if !o.shouldRun(action.Tool, action.Target) {
 			localUtils.Logger(fmt.Sprintf("[%s] Skipping redundant tool: %s on %s", agentName, action.Tool, action.Target), 1)
 			continue
@@ -121,6 +127,7 @@ func (o *Orchestrator) processRequest(req burp.BurpRequest) {
 		} else {
 			localUtils.Logger(fmt.Sprintf("[%s] AI-decided rate limit for %s: %s", agentName, action.Tool, rateLimit), 1)
 		}
+		rateLimit = clampRateLimit(rateLimit, agentName)
 
 		switch action.Tool {
 		case "dalfox":
@@ -139,6 +146,8 @@ func (o *Orchestrator) processRequest(req burp.BurpRequest) {
 			go tools.RunArjun(action.Target, req.Method, bodyStr, req.Headers, rateLimit)
 		case "gospider":
 			go tools.RunGoSpider(action.Target, rateLimit)
+		case "httpx":
+			go tools.RunHTTPX(action.Target, rateLimit)
 		case "censys":
 			go tools.RunCensys(action.Target)
 		}
@@ -294,7 +303,7 @@ func routesForClassifications(req burp.BurpRequest, classes []string) []ai.AIAct
 func normalizeAction(req burp.BurpRequest, action ai.AIAction) (ai.AIAction, bool) {
 	tool := strings.ToLower(strings.TrimSpace(action.Tool))
 	switch tool {
-	case "dalfox", "sqlmap", "nuclei", "katana", "ffuf", "arjun", "gospider", "censys":
+	case "dalfox", "sqlmap", "nuclei", "katana", "ffuf", "arjun", "gospider", "censys", "httpx":
 	case "send_http_request", "http", "curl":
 		tool = "nuclei"
 	default:
@@ -369,4 +378,19 @@ func hasAny(haystack string, needles ...string) bool {
 		}
 	}
 	return false
+}
+
+const maxRateLimit = 50
+
+// clampRateLimit caps the rate limit at maxRateLimit req/s to prevent accidental hammering.
+func clampRateLimit(rl string, agentName string) string {
+	v, err := strconv.Atoi(rl)
+	if err != nil || v <= 0 {
+		return localUtils.GetRateLimit()
+	}
+	if v > maxRateLimit {
+		localUtils.Logger(fmt.Sprintf("[%s] Rate limit %d exceeds max (%d), clamping.", agentName, v, maxRateLimit), 2)
+		return strconv.Itoa(maxRateLimit)
+	}
+	return rl
 }

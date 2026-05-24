@@ -68,7 +68,7 @@ func NewSettingsModel(width int, height int) settingsModel {
 
 	userSettings := &settingsConfig.Settings
 	if userSettings.Theme == "" { userSettings.Theme = "Modern" }
-	if userSettings.Agent == "" { userSettings.Agent = "Codex" }
+	if userSettings.Agent == "" { userSettings.Agent = "ClaudeCode" }
 	if userSettings.ProxyURL == "" { userSettings.ProxyURL = "http://127.0.0.1:8080" }
 	if userSettings.FuzzWordlist == "" { userSettings.FuzzWordlist = "/usr/share/wordlists/dirb/common.txt" }
 	if userSettings.ParamWordlist == "" { userSettings.ParamWordlist = "/usr/share/wordlists/seclists/Discovery/Web-Content/burp-parameter-names.txt" }
@@ -84,7 +84,7 @@ func NewSettingsModel(width int, height int) settingsModel {
 	}
 
 	// AI Options
-	agents := []string{"Gemini", "Ollama", "Codex", "Skibbidi"}
+	agents := []string{"ClaudeCode", "Claude", "Gemini", "Ollama", "Codex"}
 	aCursor := 0
 	for i, a := range agents {
 		if a == userSettings.Agent {

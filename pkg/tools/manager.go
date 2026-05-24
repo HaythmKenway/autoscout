@@ -12,6 +12,30 @@ import (
 	"github.com/HaythmKenway/autoscout/pkg/localUtils"
 )
 
+var (
+	toolAvailCache   = make(map[string]bool)
+	toolAvailCacheMu sync.RWMutex
+)
+
+// IsToolAvailable checks whether a binary is on PATH, caching the result.
+func IsToolAvailable(name string) bool {
+	toolAvailCacheMu.RLock()
+	if avail, ok := toolAvailCache[name]; ok {
+		toolAvailCacheMu.RUnlock()
+		return avail
+	}
+	toolAvailCacheMu.RUnlock()
+
+	_, err := exec.LookPath(name)
+	avail := err == nil
+
+	toolAvailCacheMu.Lock()
+	toolAvailCache[name] = avail
+	toolAvailCacheMu.Unlock()
+
+	return avail
+}
+
 type ToolParameter struct {
 	Name        string `json:"name"`
 	Type        string `json:"type"`
@@ -32,6 +56,7 @@ type ToolCapability struct {
 	HelpText    string          `json:"help_text"`
 	Parameters  []ToolParameter `json:"parameters"`
 	RateLimit   RateLimitConfig `json:"rate_limit"`
+	Timeout     time.Duration   `json:"-"`
 }
 
 var ToolRegistry = make(map[string]ToolCapability)
@@ -45,6 +70,10 @@ func registerTools() {
 	ToolRegistry["dalfox"] = ToolCapability{
 		Name:        "DalFox",
 		Description: "Parameter Analysis and XSS Scanning tool.",
+		Parameters: []ToolParameter{
+			{Name: "rate_limit", Type: "string", Description: "Max requests per second (e.g. '5')", Flag: "--delay", Default: "5"},
+			{Name: "method", Type: "string", Description: "HTTP method (GET, POST, etc.)", Flag: "-X"},
+		},
 		RateLimit: RateLimitConfig{
 			Flag: "--delay",
 			Unit: "ms",
@@ -53,12 +82,18 @@ func registerTools() {
 				return strconv.Itoa(1000 / r)
 			},
 		},
+		Timeout: 10 * time.Minute,
 	}
 
 	// 2. SQLMap
 	ToolRegistry["sqlmap"] = ToolCapability{
 		Name:        "SQLMap",
 		Description: "Automatic SQL injection tool.",
+		Parameters: []ToolParameter{
+			{Name: "rate_limit", Type: "string", Description: "Max requests per second (e.g. '5')", Flag: "--delay", Default: "5"},
+			{Name: "level", Type: "string", Description: "Test level 1-5 (default 2)", Flag: "--level", Default: "2"},
+			{Name: "risk", Type: "string", Description: "Risk level 1-3 (default 2)", Flag: "--risk", Default: "2"},
+		},
 		RateLimit: RateLimitConfig{
 			Flag: "--delay",
 			Unit: "s",
@@ -67,12 +102,17 @@ func registerTools() {
 				return fmt.Sprintf("%.2f", 1.0/float64(r))
 			},
 		},
+		Timeout: 20 * time.Minute,
 	}
 
 	// 3. Nuclei
 	ToolRegistry["nuclei"] = ToolCapability{
 		Name:        "Nuclei",
-		Description: "Template-based scanner.",
+		Description: "Template-based vulnerability scanner.",
+		Parameters: []ToolParameter{
+			{Name: "tags", Type: "string", Description: "Comma-separated template tags (e.g. 'lfi,rce,sqli,ssrf')", Flag: "-tags"},
+			{Name: "rate_limit", Type: "string", Description: "Max requests per second (e.g. '5')", Flag: "-rl", Default: "5"},
+		},
 		RateLimit: RateLimitConfig{
 			Flag: "-rl",
 			Unit: "req_s",
@@ -81,12 +121,18 @@ func registerTools() {
 				return strconv.Itoa(r)
 			},
 		},
+		Timeout: 15 * time.Minute,
 	}
 
 	// 4. FFUF
 	ToolRegistry["ffuf"] = ToolCapability{
 		Name:        "FFUF",
-		Description: "Fast web fuzzer.",
+		Description: "Fast web fuzzer for directories and parameters.",
+		Parameters: []ToolParameter{
+			{Name: "rate_limit", Type: "string", Description: "Max requests per second (e.g. '5')", Flag: "-rate", Default: "5"},
+			{Name: "method", Type: "string", Description: "HTTP method (GET, POST, etc.)", Flag: "-X"},
+			{Name: "wordlist", Type: "string", Description: "Optional path to a custom wordlist file", Flag: "-w"},
+		},
 		RateLimit: RateLimitConfig{
 			Flag: "-rate",
 			Unit: "req_s",
@@ -95,12 +141,16 @@ func registerTools() {
 				return strconv.Itoa(r)
 			},
 		},
+		Timeout: 15 * time.Minute,
 	}
 
 	// 5. Katana
 	ToolRegistry["katana"] = ToolCapability{
 		Name:        "Katana",
-		Description: "Crawling framework.",
+		Description: "Next-gen web crawling framework.",
+		Parameters: []ToolParameter{
+			{Name: "rate_limit", Type: "string", Description: "Max requests per second (e.g. '5')", Flag: "-rl", Default: "5"},
+		},
 		RateLimit: RateLimitConfig{
 			Flag: "-rl",
 			Unit: "req_s",
@@ -109,12 +159,17 @@ func registerTools() {
 				return strconv.Itoa(r)
 			},
 		},
+		Timeout: 5 * time.Minute,
 	}
 
 	// 6. Arjun
 	ToolRegistry["arjun"] = ToolCapability{
 		Name:        "Arjun",
-		Description: "Parameter discovery suite.",
+		Description: "HTTP parameter discovery suite.",
+		Parameters: []ToolParameter{
+			{Name: "rate_limit", Type: "string", Description: "Max requests per second (e.g. '5')", Flag: "-d", Default: "5"},
+			{Name: "method", Type: "string", Description: "HTTP method to test (GET, POST, JSON, XML)", Flag: "-m"},
+		},
 		RateLimit: RateLimitConfig{
 			Flag: "-d",
 			Unit: "s",
@@ -123,12 +178,16 @@ func registerTools() {
 				return fmt.Sprintf("%.2f", 1.0/float64(r))
 			},
 		},
+		Timeout: 8 * time.Minute,
 	}
 
 	// 7. HTTPX
 	ToolRegistry["httpx"] = ToolCapability{
 		Name:        "HTTPX",
-		Description: "HTTP toolkit.",
+		Description: "HTTP probing toolkit for service discovery.",
+		Parameters: []ToolParameter{
+			{Name: "rate_limit", Type: "string", Description: "Max requests per second (e.g. '5')", Flag: "-rl", Default: "5"},
+		},
 		RateLimit: RateLimitConfig{
 			Flag: "-rl",
 			Unit: "req_s",
@@ -137,12 +196,16 @@ func registerTools() {
 				return strconv.Itoa(r)
 			},
 		},
+		Timeout: 3 * time.Minute,
 	}
 
 	// 8. Subfinder
 	ToolRegistry["subfinder"] = ToolCapability{
 		Name:        "Subfinder",
-		Description: "Subdomain discovery.",
+		Description: "Passive subdomain discovery tool.",
+		Parameters: []ToolParameter{
+			{Name: "rate_limit", Type: "string", Description: "Number of concurrent threads", Flag: "-t", Default: "10"},
+		},
 		RateLimit: RateLimitConfig{
 			Flag: "-t",
 			Unit: "threads",
@@ -150,6 +213,7 @@ func registerTools() {
 				return "10"
 			},
 		},
+		Timeout: 5 * time.Minute,
 	}
 }
 
